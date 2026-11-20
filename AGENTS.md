@@ -117,8 +117,8 @@ Rules when extending it:
 
 - `type == 1` (auth) commands go out **plaintext**, every other type encrypted
   (`send_command` decides); send non-auth commands only after `connect()` succeeds.
-- Add queries as `(type, subtype)` pairs in the dict in `main()` (currently device info 2/2,
-  battery 2/1, device state 2/78); ids come from Gadgetbridge's Xiaomi Java services,
+- New experiments are command lines, not edits: `--send TYPE SUBTYPE [--payload text_format]`,
+  `--listen SECONDS`, `--capture [PATH]`. Ids come from Gadgetbridge's Xiaomi Java services,
   response shapes from `proto/xiaomi.proto`.
 - `-v` traces every TX/RX frame in hex — the first thing to use on protocol failures.
 

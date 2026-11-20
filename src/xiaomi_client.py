@@ -22,6 +22,7 @@ Console usage:
       --payload 'type: 2 subtype: 25 system { raiseToWake { mode: 2 } }'
   uv run python src/xiaomi_client.py --listen 30                 # connect, dump unsolicited
   uv run python src/xiaomi_client.py --send 2 18 --listen 10     # find-device, then listen
+  uv run python src/xiaomi_client.py --capture                   # record every frame, NDJSON
 
 Legacy usage (hardcoded queries):
   uv run python src/xiaomi_client.py [MAC] [--channel 2] [-v]
@@ -31,8 +32,10 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import errno
 import hashlib
 import hmac
+import json
 import locale
 import os
 import secrets
@@ -61,6 +64,57 @@ VERBOSE = False
 def log(*a):
     if VERBOSE:
         print("   ·", *a)
+
+
+# --------------------------------------------------------------------------- capture
+CAPTURE_DIR = os.path.join(ROOT, "captures")
+
+
+def default_capture_path() -> str:
+    return os.path.join(CAPTURE_DIR, time.strftime("%Y%m%dT%H%M%S") + ".ndjson")
+
+
+class Capture:
+    """Record every SPP frame, both directions, as one JSON object per line.
+
+    RX payloads are stored after decryption and TX payloads before encryption, so a
+    record always holds the protobuf bytes and never the ciphertext: records are
+    comparable regardless of the opcode a frame used. Timestamps are relative to the
+    moment the file was opened, which is what makes reply-vs-periodic analysis possible.
+    """
+
+    def __init__(self, path: str):
+        directory = os.path.dirname(os.path.abspath(path))
+        os.makedirs(directory, exist_ok=True)
+        self.path = path
+        self._fh = open(path, "w", encoding="utf-8")  # noqa: SIM115 - kept open for the run
+        self._start = time.time()
+
+    def frame(
+        self,
+        direction: str,
+        ftype: int,
+        seq: int,
+        channel: int | None = None,
+        opcode: int | None = None,
+        data: bytes = b"",
+        note: str | None = None,
+    ):
+        record = {"t": round(time.time() - self._start, 3), "dir": direction, "type": ftype}
+        if channel is not None:
+            record["ch"] = channel
+        if opcode is not None:
+            record["op"] = opcode
+        record["seq"] = seq
+        record["len"] = len(data)
+        record["hex"] = data.hex()
+        if note:
+            record["note"] = note
+        self._fh.write(json.dumps(record) + "\n")
+        self._fh.flush()  # a crash must not cost the frames captured so far
+
+    def close(self):
+        self._fh.close()
 
 
 # --------------------------------------------------------------------------- RFCOMM
@@ -141,6 +195,9 @@ V2_PREAMBLE = b"\xa5\xa5"
 T_NACK, T_ACK, T_SESSION, T_DATA = 0, 1, 2, 3
 CH_PROTOBUF, CH_DATA, CH_ACTIVITY = 1, 2, 5
 OP_PLAIN, OP_ENCRYPTED = 1, 2
+
+# Sending anything resets the watch's ~20 s idle timer, so a long listen needs a ping.
+KEEPALIVE_COMMAND = (2, 1)  # battery: read-only, cheap, always answered
 
 # Session config captured from the official app (see XiaomiSppPacketV2.SessionConfigPacket)
 SESSION_START = bytes(
@@ -251,12 +308,13 @@ class Session:
 
 # --------------------------------------------------------------------------- client
 class XiaomiWatch:
-    def __init__(self, mac: str, channel: int, secret: bytes):
+    def __init__(self, mac: str, channel: int, secret: bytes, capture: Capture | None = None):
         self.mac, self.channel = mac, channel
         self.sess = Session(secret)
         self.tx_seq = 0
         self.inbox: list[xiaomi_pb2.Command] = []
         self.link: Rfcomm | None = None
+        self.capture = capture
         self._sent: dict[int, bytes] = {}  # seq -> encoded DATA frame for NACK retransmit
         self._nacked: set[int] = set()  # seqs we already retransmitted
 
@@ -266,9 +324,12 @@ class XiaomiWatch:
         body = bytes([channel & 0x0F, opcode]) + (
             self.sess.encrypt_v2(payload) if opcode == OP_ENCRYPTED else payload
         )
-        frame = encode_v2(T_DATA, self.tx_seq, body)
+        seq = self.tx_seq
+        frame = encode_v2(T_DATA, seq, body)
         self.link.send(frame)
-        self.tx_seq = (self.tx_seq + 1) & 0xFF
+        self.tx_seq = (seq + 1) & 0xFF
+        if self.capture:
+            self.capture.frame("tx", T_DATA, seq, channel, opcode, payload)
         return frame
 
     def send_command(self, cmd: xiaomi_pb2.Command):
@@ -294,6 +355,8 @@ class XiaomiWatch:
             self.link.buf = self.link.buf[used:]
             if ptype is None:
                 continue
+            if ptype != T_DATA and self.capture:
+                self.capture.frame("rx", ptype, seq, data=payload)
             if ptype == T_ACK:
                 log("ack", seq)
             elif ptype == T_NACK:
@@ -306,10 +369,17 @@ class XiaomiWatch:
                 log("session config from watch, opcode", payload[:1].hex(), payload.hex(" "))
                 self.session_ok = True
             elif ptype == T_DATA:
-                self.link.send(encode_v2(T_ACK, seq, b""))
+                self.link.send(encode_v2(T_ACK, seq, b""))  # ACK first: never delay it
+                if len(payload) < 2:  # a DATA frame needs the channel/opcode header
+                    if self.capture:
+                        self.capture.frame("rx", ptype, seq, data=payload, note="short data")
+                    log(f"short DATA frame ({len(payload)} bytes), ignored")
+                    continue
                 ch, op, data = payload[0] & 0x0F, payload[1], payload[2:]
                 if op == OP_ENCRYPTED:
                     data = self.sess.decrypt_v2(data)
+                if self.capture:
+                    self.capture.frame("rx", ptype, seq, ch, op, data)
                 if ch == CH_PROTOBUF:
                     cmd = xiaomi_pb2.Command()
                     try:
@@ -416,10 +486,21 @@ class XiaomiWatch:
         self.send_command(cmd)
         return self.wait_for(cmd.type, cmd.subtype, timeout)
 
-    def listen(self, seconds: float) -> None:
-        """Listen for unsolicited frames for *seconds* seconds, printing each."""
-        end = time.time() + seconds
+    def listen(self, seconds: float, keepalive: float = 0) -> None:
+        """Listen for unsolicited frames for *seconds* seconds, printing each.
+
+        ``keepalive`` sends a read-only battery query every that many seconds: the watch
+        closes an idle SPP session after roughly 20 s, so a longer capture needs the ping.
+        """
+        start = time.time()
+        end = start + seconds
+        next_ping = start + keepalive if keepalive else None
         while time.time() < end:
+            if next_ping is not None and time.time() >= next_ping:
+                ctype, subtype = KEEPALIVE_COMMAND
+                self.send_command(xiaomi_pb2.Command(type=ctype, subtype=subtype))
+                print(f"  keepalive at t+{time.time() - start:.0f}s")
+                next_ping = time.time() + keepalive
             self._pump(min(1.0, end - time.time()))
             while self.inbox:
                 cmd = self.inbox.pop(0)
@@ -478,13 +559,21 @@ def main():
         "--send",
         nargs=2,
         type=int,
+        action="append",
         metavar=("TYPE", "SUBTYPE"),
-        help="Send a command (type subtype); empty body is the default",
+        help="Send a command (type subtype), repeatable; empty body is the default",
     )
     p.add_argument(
         "--payload",
         default=None,
         help="Payload as text_format string (overrides empty body for --send)",
+    )
+    p.add_argument(
+        "--timeout",
+        type=float,
+        default=8,
+        metavar="SECONDS",
+        help="Per-command wait for a response (default 8)",
     )
     p.add_argument(
         "--listen",
@@ -493,35 +582,70 @@ def main():
         metavar="SECONDS",
         help="After connect (and optional --send), listen for SECONDS and dump frames",
     )
+    p.add_argument(
+        "--keepalive",
+        type=float,
+        default=0,
+        metavar="SECONDS",
+        help="During --listen, send a read-only query every SECONDS to keep the session alive",
+    )
+    p.add_argument(
+        "--capture",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="PATH",
+        help="Record every frame to PATH as NDJSON (default: captures/<timestamp>.ndjson)",
+    )
     a = p.parse_args()
     VERBOSE = a.verbose
 
-    # Validate: --payload requires --send
+    # Validate: a body only makes sense for exactly one --send
     if a.payload and not a.send:
         p.error("--payload requires --send")
+    if a.payload and len(a.send) > 1:
+        p.error("--payload applies to a single --send")
 
-    w = XiaomiWatch(resolve_mac(a.mac), a.channel, load_key(a.key_file))
+    capture = None
+    mac = resolve_mac(a.mac)  # validate before creating a capture file
+    key = load_key(a.key_file)
+    if a.capture is not None:
+        capture = Capture(a.capture or default_capture_path())
+        print(f"Capturing every frame to {capture.path}")
+
+    w = XiaomiWatch(mac, a.channel, key, capture=capture)
     try:
         w.connect()
 
-        # --send: send a command and wait for response
-        if a.send:
-            ctype, subtype = a.send
+        # --send: one or more commands, each waiting for its response
+        for ctype, subtype in a.send or []:
             cmd = build_command(ctype, subtype, a.payload)
             print(f"Sending command {ctype}/{subtype} ...")
-            r = w.send_command_with_retransmit(cmd)
+            r = w.send_command_with_retransmit(cmd, a.timeout)
             if r is None:
                 print("(no answer)")
-                sys.exit(1)
+                if len(a.send) == 1:
+                    sys.exit(1)  # a single send was the whole request
+                continue
             print(f"Response: {text_format.MessageToString(r, as_one_line=True)}")
 
         # --listen: connect and listen for unsolicited frames
         if a.listen:
             print(f"Listening for {a.listen} seconds ...")
-            w.listen(a.listen)
+            w.listen(a.listen, a.keepalive)
 
+    except ConnectionResetError:
+        # The watch closes an SPP session after roughly 25 s; a capture keeps what it got.
+        print("\nconnection reset by the watch (session lifetime is ~25 s), keeping the capture")
+    except OSError as e:
+        if e.errno != errno.EHOSTDOWN:
+            raise
+        print("\nwatch refused the connection (EHOSTDOWN): wait a few seconds and retry")
     finally:
         w.close()
+        if capture:
+            capture.close()
+            print(f"Capture written to {capture.path}")
 
 
 if __name__ == "__main__":

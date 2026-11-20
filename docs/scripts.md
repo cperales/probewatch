@@ -81,6 +81,12 @@ uv run python src/xiaomi_client.py [MAC] [--channel 2] [--key-file PATH] [-v]
 |---|---|
 | `--channel N` | RFCOMM channel (default 2) |
 | `--key-file PATH` | Auth key file (default `secrets/auth_key.txt`) |
+| `--send TYPE SUBTYPE` | Send a command, repeatable; empty body unless `--payload` is given |
+| `--payload TEXT` | `text_format` body for a single `--send` |
+| `--timeout SECONDS` | Per-command wait for a response (default 8) |
+| `--listen SECONDS` | Print unsolicited channel-1 frames for this long after connecting |
+| `--keepalive SECONDS` | During `--listen`, send a read-only query this often |
+| `--capture [PATH]` | Record every frame, both directions, to NDJSON (default `captures/<timestamp>.ndjson`) |
 | `-v` | Verbose: trace every TX/RX frame in hex |
 
 **Default queries** (sent after auth):

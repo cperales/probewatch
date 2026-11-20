@@ -535,3 +535,142 @@ class TestNackRetransmit:
         w.link.buf = encode_v2(0, 0, b"")
         w._pump(0)
         assert len(sent_frames) == 2  # no additional retransmit
+
+
+# --------------------------------------------------------------------------- capture
+
+import json  # noqa: E402
+
+from xiaomi_client import T_ACK, T_DATA, Capture  # noqa: E402
+
+
+class TestCapture:
+    """Capture writes one NDJSON record per frame, decrypted on rx and plaintext on tx."""
+
+    def _make_watch(self, tmp_path):
+        capture = Capture(str(tmp_path / "capture.ndjson"))
+        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 2, b"\x00" * 32, capture=capture)
+        w.sess.phone_nonce = b"\x01" * 16
+        w.sess.set_keys(b"\x02" * 16)
+        sent: list[bytes] = []
+
+        class FakeLink:
+            def __init__(self):
+                self.buf = b""
+
+            def send(self, data: bytes):
+                sent.append(data)
+
+            def fill(self, timeout: float) -> bool:
+                return False
+
+            def close(self):
+                pass
+
+        w.link = FakeLink()
+        return w, sent, capture
+
+    def _records(self, capture) -> list[dict]:
+        capture.close()
+        with open(capture.path) as handle:
+            return [json.loads(line) for line in handle if line.strip()]
+
+    def test_rx_data_recorded_decrypted(self, tmp_path):
+        """An encrypted DATA frame is stored after decryption, with channel and opcode."""
+        w, _, capture = self._make_watch(tmp_path)
+        plain = xiaomi_pb2.Command(type=2, subtype=1).SerializeToString()
+        body = bytes([1, 2]) + w.sess._ctr(w.sess.dec_key, plain)  # watch -> phone key
+        w.link.buf = encode_v2(T_DATA, 7, body)
+
+        w._pump(0)
+        records = self._records(capture)
+
+        data = [r for r in records if r["dir"] == "rx" and r["type"] == T_DATA]
+        assert len(data) == 1
+        assert (data[0]["ch"], data[0]["op"], data[0]["seq"]) == (1, 2, 7)
+        assert bytes.fromhex(data[0]["hex"]) == plain
+        assert data[0]["len"] == len(plain)
+
+    def test_tx_data_recorded_plaintext(self, tmp_path):
+        """Our own commands are stored before encryption, so records are comparable."""
+        w, _, capture = self._make_watch(tmp_path)
+        cmd = xiaomi_pb2.Command(type=2, subtype=15)
+        w.send_command(cmd)
+
+        records = self._records(capture)
+        sent = [r for r in records if r["dir"] == "tx"]
+        assert len(sent) == 1
+        assert (sent[0]["ch"], sent[0]["op"]) == (1, 2)
+        assert bytes.fromhex(sent[0]["hex"]) == cmd.SerializeToString()
+
+    def test_short_data_frame_is_survivable(self, tmp_path):
+        """A DATA frame without the channel/opcode header is recorded, not an IndexError."""
+        w, sent, capture = self._make_watch(tmp_path)
+        w.link.buf = encode_v2(T_DATA, 9, b"\x01")  # one byte: no opcode
+
+        w._pump(0)  # must not raise
+        records = self._records(capture)
+
+        assert any(r.get("note") == "short data" for r in records)
+        acked = [parse_v2(frame) for frame in sent if parse_v2(frame)[0] == T_ACK]
+        assert acked, "the short frame must still be ACKed or the link drops"
+
+    def test_non_data_frames_recorded(self, tmp_path):
+        """ACK/NACK/SESSION frames are recorded too, which is what dates a reply."""
+        w, _, capture = self._make_watch(tmp_path)
+        w.link.buf = encode_v2(T_ACK, 3, b"")
+        w._pump(0)
+
+        records = self._records(capture)
+        assert any(r["dir"] == "rx" and r["type"] == T_ACK and r["seq"] == 3 for r in records)
+
+    def test_capture_is_optional(self):
+        """Without a capture object the client behaves exactly as before."""
+        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 2, b"\x00" * 32)
+        assert w.capture is None
+
+
+# --------------------------------------------------------------------------- keepalive
+
+
+class TestKeepalive:
+    """listen(keepalive=...) pings the watch so a long capture keeps its session."""
+
+    def _make_watch(self, tmp_path):
+        capture = Capture(str(tmp_path / "capture.ndjson"))
+        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 2, b"\x00" * 32, capture=capture)
+        w.sess.phone_nonce = b"\x01" * 16
+        w.sess.set_keys(b"\x02" * 16)
+        sent: list[bytes] = []
+
+        class FakeLink:
+            def __init__(self):
+                self.buf = b""
+
+            def send(self, data: bytes):
+                sent.append(data)
+
+            def fill(self, timeout: float) -> bool:
+                return False
+
+            def close(self):
+                pass
+
+        w.link = FakeLink()
+        return w, sent
+
+    def test_keepalive_sends_battery_queries(self, tmp_path):
+        w, sent = self._make_watch(tmp_path)
+        w.listen(0.12, keepalive=0.02)
+        assert sent, "keepalive must send something"
+        ptype, _, payload, _ = parse_v2(sent[0])
+        assert ptype == T_DATA
+        # decrypted in the capture; here just assert it is addressed to the battery query
+        cmd = xiaomi_pb2.Command()
+        cmd.ParseFromString(w.sess._ctr(w.sess.enc_key, payload[2:]))
+        assert (cmd.type, cmd.subtype) == (2, 1)
+
+    def test_no_keepalive_sends_nothing(self, tmp_path):
+        w, sent = self._make_watch(tmp_path)
+        w.listen(0.05)
+        assert sent == []
