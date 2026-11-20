@@ -328,6 +328,95 @@ class TestBuildCommand:
         with pytest.raises(_tf.ParseError):
             build_command(2, 25, "this is not valid protobuf text")
 
+    def test_dnd_status_payload(self):
+        """DND status payload (2/34, documented; watch returns status:1)."""
+        cmd = build_command(2, 34, "system { dndStatus { status: 0 } }")
+        assert cmd.type == 2
+        assert cmd.subtype == 34
+        assert cmd.HasField("system")
+        assert cmd.system.dndStatus.status == 0
+        assert cmd.SerializeToString().hex(" ") == "08 02 10 22 22 04 5a 02 08 00"
+
+    def test_raise_to_wake_payload(self):
+        """Raise-to-wake payload (2/25, documented; watch ignores the write)."""
+        cmd = build_command(2, 25, "system { raiseToWake { mode: 2 } }")
+        assert cmd.type == 2
+        assert cmd.subtype == 25
+        assert cmd.HasField("system")
+        assert cmd.system.raiseToWake.mode == 2
+        assert cmd.SerializeToString().hex(" ") == "08 02 10 19 22 04 3a 02 08 02"
+
+    def test_dnd_sync_set_payload(self):
+        """Verified dndSync write (2/15) — docs/protocol.md pins this string."""
+        cmd = build_command(2, 15, "system { miscSettingSet { dndSync { enabled: 1 } } }")
+        assert cmd.type == 2
+        assert cmd.subtype == 15
+        assert cmd.system.miscSettingSet.dndSync.enabled == 1
+        assert cmd.SerializeToString().hex(" ") == "08 02 10 0f 22 07 9a 02 04 12 02 08 01"
+
+    def test_dnd_sync_restore_payload(self):
+        """Verified dndSync restore (2/15) — original enabled=0."""
+        cmd = build_command(2, 15, "system { miscSettingSet { dndSync { enabled: 0 } } }")
+        assert cmd.type == 2
+        assert cmd.subtype == 15
+        assert cmd.system.miscSettingSet.dndSync.enabled == 0
+        assert cmd.SerializeToString().hex(" ") == "08 02 10 0f 22 07 9a 02 04 12 02 08 00"
+
+    def test_dnd_sync_get_payload(self):
+        """Verified dndSync read-back (2/14 setting 2) — docs pin this string."""
+        cmd = build_command(2, 14, "system { miscSettingGet { setting: 2 } }")
+        assert cmd.type == 2
+        assert cmd.subtype == 14
+        assert cmd.system.miscSettingGet.setting == 2
+        assert cmd.SerializeToString().hex(" ") == "08 02 10 0e 22 05 92 02 02 08 02"
+
+    def test_notification_settings_payload(self):
+        """Verified notification-settings write (2/15) — docs pin this string."""
+        payload = (
+            "system { miscSettingSet { miscNotificationSettings "
+            "{ wakeScreen: 1 onlyWhenPhoneLocked: 2 onlyWhenWorn: 2 } } }"
+        )
+        cmd = build_command(2, 15, payload)
+        s = cmd.system.miscSettingSet.miscNotificationSettings
+        assert (s.wakeScreen, s.onlyWhenPhoneLocked, s.onlyWhenWorn) == (1, 2, 2)
+        assert cmd.SerializeToString().hex(" ") == (
+            "08 02 10 0f 22 0b 9a 02 08 0a 06 08 01 10 02 18 02"
+        )
+
+    def test_notification_settings_restore_payload(self):
+        """Verified notification-settings restore (2/15) — original 2/1/1."""
+        payload = (
+            "system { miscSettingSet { miscNotificationSettings "
+            "{ wakeScreen: 2 onlyWhenPhoneLocked: 1 onlyWhenWorn: 1 } } }"
+        )
+        cmd = build_command(2, 15, payload)
+        s = cmd.system.miscSettingSet.miscNotificationSettings
+        assert (s.wakeScreen, s.onlyWhenPhoneLocked, s.onlyWhenWorn) == (2, 1, 1)
+        assert cmd.SerializeToString().hex(" ") == (
+            "08 02 10 0f 22 0b 9a 02 08 0a 06 08 02 10 01 18 01"
+        )
+
+    def test_watchface_list_command(self):
+        """Verified watchface list is 4/0 (docs/protocol.md), empty body."""
+        cmd = build_command(4, 0)
+        assert cmd.type == 4
+        assert cmd.subtype == 0
+        assert cmd.SerializeToString().hex(" ") == "08 04 10 00"
+
+    def test_watchface_set_ack_command(self):
+        """Watchface set 4/1 with no id returns ack:1; it is not the list."""
+        cmd = build_command(4, 1)
+        assert cmd.type == 4
+        assert cmd.subtype == 1
+        assert cmd.SerializeToString().hex(" ") == "08 04 10 01"
+
+    def test_watchface_install_status_command(self):
+        """Watchface install status 4/4, read-only."""
+        cmd = build_command(4, 4)
+        assert cmd.type == 4
+        assert cmd.subtype == 4
+        assert cmd.SerializeToString().hex(" ") == "08 04 10 04"
+
 
 # --------------------------------------------------------------------------- drain
 
@@ -366,3 +455,83 @@ class TestDrain:
         assert "[2/1]" in output
         assert "[2/2]" in output
         assert len(w.inbox) == 0  # inbox is emptied
+
+
+# --------------------------------------------------------------------------- NACK retransmit
+
+
+class TestNackRetransmit:
+    """XiaomiWatch._pump retransmits once per seq when the watch NACKs."""
+
+    def _make_watch(self):
+        """Create a XiaomiWatch with encrypted session and fake link."""
+        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 2, b"\x00" * 32)
+        # Initialize session keys so encryption works without auth
+        w.sess.phone_nonce = b"\x01" * 16
+        w.sess.set_keys(b"\x02" * 16)
+        w.sess.encrypted = True
+
+        sent_frames: list[bytes] = []
+
+        class FakeLink:
+            def __init__(self):
+                self.buf = b""
+
+            def send(self, data: bytes):
+                sent_frames.append(data)
+
+            def fill(self, timeout: float) -> bool:
+                return False
+
+            def close(self):
+                pass
+
+        w.link = FakeLink()
+        return w, sent_frames
+
+    def test_one_retransmit_per_seq(self):
+        """A NACK for seq 0 triggers exactly one retransmit of the same command."""
+        w, sent_frames = self._make_watch()
+
+        # Build a command and send it
+        cmd = xiaomi_pb2.Command(type=2, subtype=34)
+        w.send_command(cmd)
+        assert w.tx_seq == 1  # incremented after send
+        assert 0 in w._sent  # tracked by seq 0
+
+        # Simulate a NACK for seq 0 in the link buffer
+        nack_frame = encode_v2(0, 0, b"")  # type=NACK, seq=0
+        w.link.buf = nack_frame
+
+        # Pump with zero timeout (no more data will arrive)
+        w._pump(0)
+
+        # Verify: original send + one retransmit = 2 frames total
+        assert len(sent_frames) == 2, f"expected 2 frames, got {len(sent_frames)}"
+
+        # Both frames must be identical (verbatim retransmit)
+        assert sent_frames[0] == sent_frames[1]
+
+        # The retransmitted frame must be a DATA frame (type 3)
+        ptype, _, _, _ = parse_v2(sent_frames[1])
+        assert ptype == 3, f"retransmit should be DATA, got type {ptype}"
+
+        # After retransmit, _nacked contains seq 0 so a second NACK is ignored
+        assert 0 in w._nacked
+
+    def test_second_nack_ignored(self):
+        """A second NACK for the same seq does not trigger another retransmit."""
+        w, sent_frames = self._make_watch()
+
+        cmd = xiaomi_pb2.Command(type=2, subtype=18)
+        w.send_command(cmd)
+
+        # First NACK
+        w.link.buf = encode_v2(0, 0, b"")
+        w._pump(0)
+        assert len(sent_frames) == 2  # original + retransmit
+
+        # Second NACK for the same seq — should be ignored
+        w.link.buf = encode_v2(0, 0, b"")
+        w._pump(0)
+        assert len(sent_frames) == 2  # no additional retransmit

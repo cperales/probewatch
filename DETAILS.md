@@ -48,7 +48,7 @@
 - En la zona puede haber otros relojes del mismo modelo. Las direcciones y los números de
   serie locales están en `secrets/device.md` (no se publican).
 
-## Protocolo Xiaomi (verificado desde el PC con `src/xiaomi_client.py`)
+## Protocol Xiaomi (verificado desde el PC con `src/xiaomi_client.py`)
 
 | Campo | Valor |
 |---|---|
@@ -57,8 +57,44 @@
 | Sesión del reloj | máx. paquete `0x8000` (32768 B), ventana TX 3, timeout 16000 ms |
 | Autenticación | nonces + HKDF-SHA256 (`"miwear-auth"`) + HMAC; clave de Mi Fitness (`secrets/auth_key.txt`) |
 | Cifrado tras auth | AES-128-CTR (la propia clave como IV); info del teléfono con AES-CCM (tag 4 B) |
-| Capacidades (auth step 4) | `device_capability=52851550`, `device_capability_2=16885157` |
+| Capacidades (auth step 4) | `device_capability=52851550`, `device_capability_2` variable |
 | Emparejamiento PC | Directo por MAC (`src/pair_watch.py --direct`), sin resetear: la clave sigue siendo válida |
+
+### Comandos probados (firmware 2.2.110, modelo limitado)
+
+| Comando | Resultado |
+|---|---|
+| `--send 2 1` (battery) | ✓ — `level: 100, state: 3` |
+| `--send 2 2` (device info) | ✓ — serial, firmware, model |
+| `--send 2 14 --payload 'system { miscSettingGet { setting: 2 } }'` | ✓ — dndSync y ajustes de notificación |
+| `--send 2 14 --payload 'system { miscSettingGet { setting: 1 } }'` | ✓ — `wakeScreen/onlyWhenPhoneLocked/onlyWhenWorn` |
+| `--send 2 15 --payload 'system { miscSettingSet { dndSync { enabled: 1 } } }'` | ✓ — `status: 0`; lectura posterior `enabled: 1` |
+| `--send 2 15 --payload 'system { miscSettingSet { miscNotificationSettings { wakeScreen: 1 onlyWhenPhoneLocked: 2 onlyWhenWorn: 2 } } }'` | ✓ — `status: 0`; lectura posterior coincide |
+| `--send 2 18` (find-device) | ✓ — `status: 0`, el reloj suena |
+| `--send 2 23` / `2 34` (DND) | ✗ — `status: 1` (no implementado) |
+| `--send 2 24` (raiseToWake get) | ✓ — `mode: 2 start 8:00 end 22:00` |
+| `--send 2 25` (raiseToWake set) | ✗ — ACK de transporte, sin respuesta; el valor no cambia |
+| `--send 2 39` (workoutTypes) | ✓ — 100+ tipos |
+| `--send 2 51` (widgetScreens) | ✓ — 4 pantallas |
+| `--send 2 53` (widgetParts) | ✓ — 80+ partes |
+| `--send 2 78` / `2 79` (deviceState) | ✗ — `status: 1` |
+| `--send 4 0` (watchface list) | ✓ — 4 esferas: Swirl (activa), Dynamic data, Step space, Twilight |
+| `--send 4 1` (watchface set) | ACK — `ack: 1`, no es la lista |
+| `--send 4 4` (install status) | ✓ — `watchface {}` vacío |
+
+El reloj es un modelo de firmware limitado: las escrituras de DND (2/23, 2/34),
+raiseToWake (2/25) y deviceState (2/78, 2/79) no están implementadas. DND se probó de
+forma exhaustiva: 2/23 con status 0 y 2, y 2/34 con status 0, todos devuelven
+`status: 1` y no cambian ni 2/34 ni la lectura de 2/14 setting 2 (`dndSync.enabled: 0`).
+La ruta de escritura quedó verificada con dos ajustes persistentes:
+
+- **dndSync**: lectura `enabled: 0` → escritura `enabled: 1` (`status: 0`) → lectura en
+  sesión nueva `enabled: 1` → restauración `enabled: 0` → lectura `enabled: 0`.
+- **Notificaciones**: `wakeScreen 2→1`, `onlyWhenPhoneLocked 1→2`, `onlyWhenWorn 1→2`,
+  lectura en sesión nueva, y restauración a `2/1/1`.
+
+Las cadenas de payload y las restricciones están en `docs/protocol.md` (sección
+"Hardware verification") y fijadas por tests de `build_command()`.
 
 ## Datos leídos del reloj (2026-11-16)
 

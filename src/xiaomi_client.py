@@ -257,23 +257,28 @@ class XiaomiWatch:
         self.tx_seq = 0
         self.inbox: list[xiaomi_pb2.Command] = []
         self.link: Rfcomm | None = None
-        self._sent: dict[int, xiaomi_pb2.Command] = {}  # seq -> cmd for NACK retransmit
+        self._sent: dict[int, bytes] = {}  # seq -> encoded DATA frame for NACK retransmit
         self._nacked: set[int] = set()  # seqs we already retransmitted
 
     # -- low level
-    def _send_data(self, channel: int, opcode: int, payload: bytes):
+    def _send_data(self, channel: int, opcode: int, payload: bytes) -> bytes:
+        """Build and send a DATA frame, returning the full encoded frame for retransmit."""
         body = bytes([channel & 0x0F, opcode]) + (
             self.sess.encrypt_v2(payload) if opcode == OP_ENCRYPTED else payload
         )
-        self.link.send(encode_v2(T_DATA, self.tx_seq, body))
+        frame = encode_v2(T_DATA, self.tx_seq, body)
+        self.link.send(frame)
         self.tx_seq = (self.tx_seq + 1) & 0xFF
+        return frame
 
     def send_command(self, cmd: xiaomi_pb2.Command):
         log("send cmd", cmd.type, cmd.subtype)
+        seq = self.tx_seq  # capture before _send_data increments it
         if cmd.type == 1:  # auth -> plaintext on the protobuf channel
-            self._send_data(CH_PROTOBUF, OP_PLAIN, cmd.SerializeToString())
+            frame = self._send_data(CH_PROTOBUF, OP_PLAIN, cmd.SerializeToString())
         else:
-            self._send_data(CH_PROTOBUF, OP_ENCRYPTED, cmd.SerializeToString())
+            frame = self._send_data(CH_PROTOBUF, OP_ENCRYPTED, cmd.SerializeToString())
+        self._sent[seq] = frame  # track full encoded frame for NACK retransmit
 
     def _pump(self, timeout: float):
         """Read and handle frames until `timeout` seconds pass without a complete frame."""
@@ -295,7 +300,7 @@ class XiaomiWatch:
                 log("nack, watch expects", seq)
                 if seq in self._sent and seq not in self._nacked:
                     log("retransmitting command for seq", seq)
-                    self.link.send(encode_v2(T_DATA, seq, self._sent[seq].SerializeToString()))
+                    self.link.send(self._sent[seq])  # verbatim DATA body
                     self._nacked.add(seq)
             elif ptype == T_SESSION:
                 log("session config from watch, opcode", payload[:1].hex(), payload.hex(" "))
@@ -405,8 +410,8 @@ class XiaomiWatch:
     ) -> xiaomi_pb2.Command | None:
         """Send a command and wait for response, with one NACK retransmit.
 
-        Tracks the sent command by sequence number so ``_pump`` can retransmit
-        when the watch sends a NACK.
+        ``send_command`` stores the full encoded DATA frame by sequence number so
+        ``_pump`` can resend it verbatim when the watch sends a NACK.
         """
         self.send_command(cmd)
         return self.wait_for(cmd.type, cmd.subtype, timeout)
