@@ -624,8 +624,8 @@ def main():
             r = w.send_command_with_retransmit(cmd, a.timeout)
             if r is None:
                 print("(no answer)")
-                if len(a.send) == 1:
-                    sys.exit(1)  # a single send was the whole request
+                if len(a.send) == 1 and not a.listen:
+                    sys.exit(1)  # a lone send that expects an answer failed
                 continue
             print(f"Response: {text_format.MessageToString(r, as_one_line=True)}")
 
