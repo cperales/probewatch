@@ -104,6 +104,8 @@ Las cadenas de payload y las restricciones están en `docs/protocol.md` (secció
 | Reconexión tras un corte | Los primeros intentos fallan con `EHOSTDOWN` (errno 112); un reintento ~10 s después conecta |
 | Latido en reposo | `18/0` (tipo Music vacío) cada ~1 s cuando el enlace está inactivo; desaparece si hay otra actividad |
 | Datos de salud en vivo | `8/45` no responde directamente pero arranca una ráfaga `8/47` `realTimeStats { steps calories heartRate }` cada ~1 s, **por el canal 1** |
+| Entrenamiento en curso | Cuatro sesiones con sentadillas: 114 frames, todos por el canal 1; 74 muestras de pulso de 0 a 112 ppm; `steps`/`calories` a 0 |
+| Tras guardar el entrenamiento | `8/2` sigue devolviendo `activityRequestFileIds: ""`, también con `activitySyncRequestToday { unknown1: 1 }` |
 | Sincronización de actividad | `8/2` devuelve `activityRequestFileIds: ""` (sin ficheros en cola): apunta a una transferencia por ficheros |
 | `8/3` (actividad pasada) | Sin respuesta |
 | `8/8`, `8/12`, `8/35` | Responden con datos |

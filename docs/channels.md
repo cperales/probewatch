@@ -91,22 +91,33 @@ a counter rather than a length.
 
 ## Findings
 
-Measured 2026-11-20 on firmware 2.2.110, phone Bluetooth off, five sessions: a 10 s smoke
-test, 120 s idle, 120 s and 45 s with keepalive, and a 26 s query matrix.
+Measured 2026-11-20 on firmware 2.2.110, phone Bluetooth off: **13 sessions, ~243 s of
+captured session time, 242 DATA frames — every one of them on channel 1.** Zero frames on
+channel 2, zero on channel 5.
 
 | Observation | Evidence |
 |---|---|
-| No frame on channel 2 or 5 | Zero frames on either channel across all sessions |
+| No frame on channel 2 or 5, in any scenario | Idle, keepalive, query matrix, live workout, after the workout |
 | A session dies ~20–26 s after auth, whatever the traffic | Resets at 22.7, 23.0, 25.5 and 25.7 s; a keepalive every 3 s does not extend it |
 | After a reset the watch answers `EHOSTDOWN` for a few seconds | Immediate reconnect fails with errno 112; a retry ~10 s later connects |
 | The idle heartbeat is `18/0`, once per second | Present in sessions with no traffic, absent while the `8/47` stream runs |
-| Live health data is protobuf on **channel 1**, not channel 5 | `8/45` is followed by `8/47` `realTimeStats { steps calories heartRate }` every ~1 s |
-| Activity sync looks file-based | `8/2` replies with `activityRequestFileIds: ""` |
-| `8/8`, `8/12`, `8/35`, `2/39` answer; `8/3` stays silent | Responses in the matrix capture |
+| Live health data is protobuf on **channel 1**, not channel 5 | `8/45` starts `8/47` `realTimeStats { steps calories heartRate }` every ~1 s; during a workout 74 samples tracked 0→112 bpm |
+| A workout does not open a new channel | Four sessions during active squats: 114 frames, all channel 1, `steps`/`calories` at 0 |
+| Activity files are never queued, even after saving the workout | `8/2` replies `activityRequestFileIds: ""` before, during and after; also with `activitySyncRequestToday { unknown1: 1 }` |
+| Workout status is a status only | `8/29` → `workoutStatusWatchV2 { status: 0 }`; `8/26`, `8/50`, `8/53` → `status: 1`; `8/30` silent |
+| `8/8`, `8/12`, `8/35`, `2/39` answer | Responses in the matrix capture |
 
-Interpretation: the live stream is already protobuf on channel 1, so channels 2 and 5 are
-more likely bulk or file transfer — `activityRequestFileIds` is the pointer to it. That is
-the hypothesis to test next, with a workout running and captures taken in ≤25 s windows.
+### Verdict
+
+Channels 2 and 5 are **not** this firmware's live path: the real-time stream is protobuf on
+channel 1 and a workout adds nothing. The only untested use left is bulk transfer — activity
+files, watchface images, notification icons — and `activityRequestFileIds` is the pointer to
+it. Triggering that needs the phone-side sync sequence (what Mi Fitness sends to make the
+watch produce a file id), which a Linux client cannot guess from the protos alone; it would
+need a phone capture to reproduce.
+
+Until that is available, the negative result stands: on this watch, with a Linux client
+driving the session, channels 2 and 5 carry nothing.
 
 Because of the lifetime cap, `--keepalive` exists (it keeps the session responsive but does
 not extend it) and `--send` is repeatable, so a query matrix fits in one window. A capture

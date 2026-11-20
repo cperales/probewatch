@@ -108,10 +108,12 @@ limited-firmware model; several proto settings are not implemented.
 | 2/25 (raise-to-wake set) | ✗ transport ACK, no reply; value unchanged |
 | 2/23, 2/34 (DND) | ✗ `status: 1` |
 | 2/78, 2/79 (device state) | ✗ `status: 1` |
-| 8/2 (activity today) | ✓ `activityRequestFileIds: ""` (no files queued) |
+| 8/2 (activity today) | ✓ `activityRequestFileIds: ""` always, including after a saved workout |
 | 8/3 (activity past) | ✗ no answer |
+| 8/29 (workout status v2) | ✓ `workoutStatusWatchV2 { status: 0 }` |
+| 8/26, 8/30, 8/50, 8/53 | ✗ `status: 1` / no answer |
 | 8/8, 8/12, 8/35 | ✓ data response |
-| 8/45 (real-time stats request) | no direct reply; the `8/47` stream starts |
+| 8/45 (real-time stats) | no reply; starts the `8/47` stream |
 | 8/47 (unsolicited) | ✓ `realTimeStats { steps calories heartRate }` every ~1 s |
 | 4/0 (watchface list) | ✓ `watchfaceList` with 4 faces |
 | 4/1 (watchface set) | ACK `ack: 1`; not the list |
@@ -149,10 +151,9 @@ uv run python src/xiaomi_client.py --send 2 14 --payload 'system { miscSettingGe
 Payload constraints: `HourMinute` requires both `hour` and `minute`; `wakeScreen`
 0 ignore / 1 enable / 2 disable, `onlyWhenPhoneLocked` 0 ignore / 1 enable / 2 disable,
 `onlyWhenWorn` 1 enable / 2 disable. `DoNotDisturb.status` is 0 enabled / 2 disabled.
-The watch does not implement the writes for 2/23, 2/25, 2/34, 2/78 or 2/79; record
-those as findings, not success. DND was tried exhaustively: 2/23 with status 0 and 2,
-and 2/34 with status 0, all return `status: 1`; 2/34 and the 2/14 setting-2 read-back
-stay unchanged (`dndSync.enabled: 0`).
+The watch does not implement the writes for 2/23, 2/25, 2/34, 2/78 or 2/79: every DND
+variant returns `status: 1` and leaves `dndSync.enabled` unchanged. Full attempts are in
+`DETAILS.md`.
 
 ## Authentication flow
 
