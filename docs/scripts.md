@@ -115,6 +115,21 @@ remote status, password status, raise-to-wake, DND status, workout types, widget
 heart-rate settings, vitality score, real-time stats, and more. `find-device` is the one
 side effect — it makes the watch ring — so it stays last in the list.
 
+### `src/decode_capture.py`
+
+Offline analysis of a `--capture` file. Prints per-channel frame counts, distinct lengths,
+opcodes and interval medians; for channels other than 1 it also reports sample payloads,
+which generated protobuf message accounts for a payload (strict round-trip, so unknown-field
+noise does not count as a match), and whether the payloads form a u16 length-prefixed record
+stream.
+
+```bash
+uv run python src/decode_capture.py captures/<file>.ndjson [--channel N] [--samples N]
+```
+
+Read-only and hardware-free. See [channels.md](channels.md) for the capture method and the
+trigger matrix.
+
 ## Audio
 
 ### `src/audio_test.py`

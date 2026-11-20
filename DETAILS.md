@@ -96,6 +96,24 @@ La ruta de escritura quedó verificada con dos ajustes persistentes:
 Las cadenas de payload y las restricciones están en `docs/protocol.md` (sección
 "Hardware verification") y fijadas por tests de `build_command()`.
 
+## Sesión SPP, captura y canales sin decodificar (2026-11-20)
+
+| Hecho | Detalle |
+|---|---|
+| Duración de la sesión | El reloj cierra el enlace ~20–26 s después de la autenticación, con o sin tráfico (reinicios medidos a 22,7 / 23,0 / 25,5 / 25,7 s). Un `--keepalive` cada 3 s mantiene el diálogo pero **no** alarga la sesión |
+| Reconexión tras un corte | Los primeros intentos fallan con `EHOSTDOWN` (errno 112); un reintento ~10 s después conecta |
+| Latido en reposo | `18/0` (tipo Music vacío) cada ~1 s cuando el enlace está inactivo; desaparece si hay otra actividad |
+| Datos de salud en vivo | `8/45` no responde directamente pero arranca una ráfaga `8/47` `realTimeStats { steps calories heartRate }` cada ~1 s, **por el canal 1** |
+| Sincronización de actividad | `8/2` devuelve `activityRequestFileIds: ""` (sin ficheros en cola): apunta a una transferencia por ficheros |
+| `8/3` (actividad pasada) | Sin respuesta |
+| `8/8`, `8/12`, `8/35` | Responden con datos |
+| Canales 2 y 5 | **Ningún frame** en ninguna de las cinco sesiones capturadas |
+
+La captura se hace con `src/xiaomi_client.py --capture` (NDJSON, ambos sentidos) y se
+analiza en frío con `src/decode_capture.py`; el método y los resultados están en
+`docs/channels.md`. Como la sesión dura ~25 s, las pruebas largas se hacen en ventanas y
+con `--send` repetible.
+
 ## Datos leídos del reloj (2026-11-16)
 
 | Campo | Valor |

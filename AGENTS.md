@@ -86,7 +86,7 @@ the reversal if you touch it.
 | `src/find_watch.py`, `src/scan.py` | BLE discovery and Xiaomi-advert flags |
 | `src/watch_info.py`, `src/pair_watch.py` | GATT read; BlueZ pairing/trust |
 | `src/spp_probe.py`, `src/a2dp_probe.py` | passive RFCOMM log; AVDTP capabilities |
-| `src/xiaomi_client.py`, `src/probe_extra.py` | SPP v2 client; extra queries |
+| `src/xiaomi_client.py`, `src/probe_extra.py`, `src/decode_capture.py` | SPP v2 client; extra queries; capture analysis |
 | `src/audio_test.py`, `src/watch_secrets.py` | HFP test; MAC resolution (shared) |
 | `tests/`, `docs/`, `scripts/` | unit tests; long-form docs; harness helpers |
 

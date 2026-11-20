@@ -56,6 +56,9 @@ Bytes 2+: Payload (plaintext or encrypted)
 NACK retransmit: the client stores the full encoded DATA frame (channel + opcode +
 encrypted payload) under its seq and resends it verbatim, once per seq.
 
+Channels 2 and 5 are ACKed and then dropped; `--capture` is the only way to record them.
+See [channels.md](channels.md) for the capture format, trigger matrix and analysis.
+
 ## SESSION frames
 
 Client → Watch START_SESSION_REQUEST (after the version probe): opcode 1, version
@@ -105,6 +108,11 @@ limited-firmware model; several proto settings are not implemented.
 | 2/25 (raise-to-wake set) | ✗ transport ACK, no reply; value unchanged |
 | 2/23, 2/34 (DND) | ✗ `status: 1` |
 | 2/78, 2/79 (device state) | ✗ `status: 1` |
+| 8/2 (activity today) | ✓ `activityRequestFileIds: ""` (no files queued) |
+| 8/3 (activity past) | ✗ no answer |
+| 8/8, 8/12, 8/35 | ✓ data response |
+| 8/45 (real-time stats request) | no direct reply; the `8/47` stream starts |
+| 8/47 (unsolicited) | ✓ `realTimeStats { steps calories heartRate }` every ~1 s |
 | 4/0 (watchface list) | ✓ `watchfaceList` with 4 faces |
 | 4/1 (watchface set) | ACK `ack: 1`; not the list |
 | 4/4 (install status) | ✓ empty `watchface {}` |
