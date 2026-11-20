@@ -11,6 +11,7 @@ short contract. `make sizes` tracks their cost (~3.8 bytes/token).
 | [architecture.md](architecture.md) | 7 KB | `src/xiaomi_client.py` layers, crypto, protobuf bindings |
 | [protocol.md](protocol.md) | 8 KB | SPP v2 frame format, auth flow, encryption, command types |
 | [channels.md](channels.md) | 5 KB | Channels 2 and 5: capture method, trigger matrix, analysis |
+| [apk-analysis.md](apk-analysis.md) | 7 KB | Official app: provenance, L1 ARQ, full channel table, crypto |
 | [audio.md](audio.md) | 5 KB | HFP audio, SCO quirks, verification, workarounds |
 
 ## Quick links
