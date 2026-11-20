@@ -15,6 +15,7 @@ from xiaomi_client import (
     V1_PREAMBLE,
     V1_VERSION_REQUEST,
     Session,
+    XiaomiWatch,
     crc16_arc,
     derive_keys,
     encode_v2,
@@ -287,3 +288,81 @@ class TestSessionCrypto:
         data = b"short"
         encrypted = session.ccm_encrypt(data, 0)
         assert len(encrypted) == len(data) + 4
+
+
+# --------------------------------------------------------------------------- build_command
+
+from xiaomi_client import build_command  # noqa: E402
+
+
+class TestBuildCommand:
+    """build_command creates Command protobufs from type/subtype and optional payload."""
+
+    def test_empty_body(self):
+        """Empty body is the default: only type and subtype are set."""
+        cmd = build_command(2, 34)
+        assert cmd.type == 2
+        assert cmd.subtype == 34
+        assert not cmd.HasField("system")
+        assert not cmd.HasField("health")
+
+    def test_with_payload(self):
+        """text_format.Parse populates nested fields from the payload string."""
+        payload = "system { raiseToWake { mode: 2 } }"
+        cmd = build_command(2, 25, payload)
+        assert cmd.type == 2
+        assert cmd.subtype == 25
+        assert cmd.HasField("system")
+        assert cmd.system.raiseToWake.mode == 2
+
+    def test_payload_overrides_defaults(self):
+        """A text_format payload can override the default empty body."""
+        cmd = build_command(2, 25, "system { raiseToWake { mode: 1 } }")
+        assert cmd.HasField("system")
+        assert cmd.system.raiseToWake.mode == 1
+
+    def test_invalid_payload_raises(self):
+        """Malformed text_format raises an exception."""
+        from google.protobuf import text_format as _tf
+
+        with pytest.raises(_tf.ParseError):
+            build_command(2, 25, "this is not valid protobuf text")
+
+
+# --------------------------------------------------------------------------- drain
+
+import xiaomi_pb2  # noqa: E402
+
+
+class TestDrain:
+    """XiaomiWatch.drain() empties the inbox and prints every queued command."""
+
+    def test_drain_empty_inbox(self):
+        """Drain on an empty inbox is a no-op."""
+        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 2, b"\x00" * 32)
+        # link is None, but drain doesn't touch it
+        w.drain()  # should not raise
+
+    def test_drain_prints_all_commands(self):
+        """Drain pops every command from inbox and prints them."""
+        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 2, b"\x00" * 32)
+        cmd1 = xiaomi_pb2.Command(type=2, subtype=1)
+        cmd2 = xiaomi_pb2.Command(type=2, subtype=2)
+        w.inbox.append(cmd1)
+        w.inbox.append(cmd2)
+        assert len(w.inbox) == 2
+
+        # Capture printed output
+        import io
+        import sys
+
+        buf = io.StringIO()
+        old_stdout = sys.stdout
+        sys.stdout = buf
+        w.drain()
+        sys.stdout = old_stdout
+
+        output = buf.getvalue()
+        assert "[2/1]" in output
+        assert "[2/2]" in output
+        assert len(w.inbox) == 0  # inbox is emptied

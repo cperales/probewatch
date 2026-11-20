@@ -16,7 +16,15 @@ Prerequisites:
   * phone Bluetooth OFF (the watch talks to one client at a time)
   * auth key (32 hex chars) in secrets/auth_key.txt
 
-Usage: uv run python src/xiaomi_client.py [MAC] [--channel 2] [-v]
+Console usage:
+  uv run python src/xiaomi_client.py --send 2 34                 # empty get
+  uv run python src/xiaomi_client.py --send 2 25 \\
+      --payload 'type: 2 subtype: 25 system { raiseToWake { mode: 2 } }'
+  uv run python src/xiaomi_client.py --listen 30                 # connect, dump unsolicited
+  uv run python src/xiaomi_client.py --send 2 18 --listen 10     # find-device, then listen
+
+Legacy usage (hardcoded queries):
+  uv run python src/xiaomi_client.py [MAC] [--channel 2] [-v]
 """
 
 from __future__ import annotations
@@ -249,6 +257,8 @@ class XiaomiWatch:
         self.tx_seq = 0
         self.inbox: list[xiaomi_pb2.Command] = []
         self.link: Rfcomm | None = None
+        self._sent: dict[int, xiaomi_pb2.Command] = {}  # seq -> cmd for NACK retransmit
+        self._nacked: set[int] = set()  # seqs we already retransmitted
 
     # -- low level
     def _send_data(self, channel: int, opcode: int, payload: bytes):
@@ -283,6 +293,10 @@ class XiaomiWatch:
                 log("ack", seq)
             elif ptype == T_NACK:
                 log("nack, watch expects", seq)
+                if seq in self._sent and seq not in self._nacked:
+                    log("retransmitting command for seq", seq)
+                    self.link.send(encode_v2(T_DATA, seq, self._sent[seq].SerializeToString()))
+                    self._nacked.add(seq)
             elif ptype == T_SESSION:
                 log("session config from watch, opcode", payload[:1].hex(), payload.hex(" "))
                 self.session_ok = True
@@ -386,6 +400,36 @@ class XiaomiWatch:
         self.send_command(xiaomi_pb2.Command(type=ctype, subtype=subtype))
         return self.wait_for(ctype, subtype, timeout)
 
+    def send_command_with_retransmit(
+        self, cmd: xiaomi_pb2.Command, timeout: float = 8
+    ) -> xiaomi_pb2.Command | None:
+        """Send a command and wait for response, with one NACK retransmit.
+
+        Tracks the sent command by sequence number so ``_pump`` can retransmit
+        when the watch sends a NACK.
+        """
+        self.send_command(cmd)
+        return self.wait_for(cmd.type, cmd.subtype, timeout)
+
+    def listen(self, seconds: float) -> None:
+        """Listen for unsolicited frames for *seconds* seconds, printing each."""
+        end = time.time() + seconds
+        while time.time() < end:
+            self._pump(min(1.0, end - time.time()))
+            while self.inbox:
+                cmd = self.inbox.pop(0)
+                print(
+                    f"[{cmd.type}/{cmd.subtype}] {text_format.MessageToString(cmd, as_one_line=True)}"
+                )
+
+    def drain(self) -> None:
+        """Drain the inbox and print every queued command."""
+        while self.inbox:
+            cmd = self.inbox.pop(0)
+            print(
+                f"[{cmd.type}/{cmd.subtype}] {text_format.MessageToString(cmd, as_one_line=True)}"
+            )
+
     def close(self):
         if self.link:
             self.link.close()
@@ -402,30 +446,75 @@ def load_key(path: str) -> bytes:
     return bytes.fromhex(k)
 
 
+def build_command(ctype: int, subtype: int, payload_text: str | None = None) -> xiaomi_pb2.Command:
+    """Build a Command protobuf from type/subtype and optional text_format payload.
+
+    ``payload_text`` is parsed with ``text_format.Parse`` so the user names the
+    field explicitly — nothing is inferred or guessed.
+    """
+    cmd = xiaomi_pb2.Command(type=ctype, subtype=subtype)
+    if payload_text:
+        text_format.Parse(payload_text, cmd)
+    return cmd
+
+
 def main():
     global VERBOSE
-    p = argparse.ArgumentParser()
+    p = argparse.ArgumentParser(
+        description="Console for Xiaomi SPP v2: send commands, listen for responses."
+    )
     p.add_argument(
         "mac", nargs="?", default=None, help="watch MAC (default: secrets/device.md or $WATCH_MAC)"
     )
     p.add_argument("--channel", type=int, default=2)
     p.add_argument("--key-file", default=KEY_FILE)
     p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument(
+        "--send",
+        nargs=2,
+        type=int,
+        metavar=("TYPE", "SUBTYPE"),
+        help="Send a command (type subtype); empty body is the default",
+    )
+    p.add_argument(
+        "--payload",
+        default=None,
+        help="Payload as text_format string (overrides empty body for --send)",
+    )
+    p.add_argument(
+        "--listen",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help="After connect (and optional --send), listen for SECONDS and dump frames",
+    )
     a = p.parse_args()
     VERBOSE = a.verbose
+
+    # Validate: --payload requires --send
+    if a.payload and not a.send:
+        p.error("--payload requires --send")
 
     w = XiaomiWatch(resolve_mac(a.mac), a.channel, load_key(a.key_file))
     try:
         w.connect()
-        print("\nQueries")
-        for name, (t, s) in {
-            "device info": (2, 2),
-            "battery": (2, 1),
-            "device state": (2, 78),
-        }.items():
-            r = w.request(t, s)
-            body = text_format.MessageToString(r, as_one_line=False) if r else "(no answer)\n"
-            print(f"--- {name} ---\n{body}")
+
+        # --send: send a command and wait for response
+        if a.send:
+            ctype, subtype = a.send
+            cmd = build_command(ctype, subtype, a.payload)
+            print(f"Sending command {ctype}/{subtype} ...")
+            r = w.send_command_with_retransmit(cmd)
+            if r is None:
+                print("(no answer)")
+                sys.exit(1)
+            print(f"Response: {text_format.MessageToString(r, as_one_line=True)}")
+
+        # --listen: connect and listen for unsolicited frames
+        if a.listen:
+            print(f"Listening for {a.listen} seconds ...")
+            w.listen(a.listen)
+
     finally:
         w.close()
 
