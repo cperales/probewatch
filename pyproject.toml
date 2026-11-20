@@ -1,0 +1,47 @@
+[project]
+name = "probewatch"
+version = "0.1.0"
+description = "Unofficial Linux probes (BLE, RFCOMM/L2CAP, SPP v2) for the Redmi Watch 5 Active (M2351W1)"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+urls = { Repository = "https://github.com/cperales/probewatch" }
+dependencies = [
+    "bleak>=1.0",
+    "cryptography>=42",
+    "pexpect>=4.9",
+    "protobuf>=5",
+]
+
+[dependency-groups]
+# grpcio-tools regenerates src/xiaomi_pb/; pytest and ruff run the harness checks.
+dev = [
+    "grpcio-tools>=1.60",
+    "pytest>=8.0",
+    "ruff>=0.9",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q -m 'not hardware and not network'"
+markers = [
+    "hardware: needs the physical watch (skipped by default)",
+    "network: needs network or live Bluetooth (skipped by default)",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+# The formatter keeps lines under 100 columns where it can; a few protocol
+# constants and hex strings are legitimately wider.
+ignore = ["E501"]
+
+[tool.uv]
+# Never let uv substitute its own downloaded CPython: those builds have no
+# socket.AF_BLUETOOTH, which src/spp_probe.py and src/a2dp_probe.py require.
+python-preference = "system"

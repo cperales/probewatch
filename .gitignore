@@ -1,0 +1,12 @@
+# Folders
+secrets/
+__pycache__/
+.venv/
+
+# Generated / vendored -- bootstrap both with ./fetch_protos.sh
+proto/
+xiaomi_pb/
+
+# Files
+*.wav
+

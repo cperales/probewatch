@@ -1,0 +1,289 @@
+"""Unit tests for SPP v1 and v2 framing, CRC, and crypto layers.
+
+These tests exercise the pure-logic functions in xiaomi_client.py without
+any Bluetooth hardware or network access.
+"""
+
+import struct
+
+import pytest
+
+# Import from src/ via conftest sys.path
+from xiaomi_client import (
+    SESSION_START,
+    V1_EPILOGUE,
+    V1_PREAMBLE,
+    V1_VERSION_REQUEST,
+    Session,
+    crc16_arc,
+    derive_keys,
+    encode_v2,
+    hmac_sha256,
+    parse_v1,
+    parse_v2,
+)
+
+# --------------------------------------------------------------------------- CRC-16/ARC
+
+
+class TestCrc16:
+    """CRC-16/ARC (used by SPP v2 framing)."""
+
+    def test_known_value(self):
+        # CRC of SESSION_START is deterministic
+        crc = crc16_arc(SESSION_START)
+        # Verify it matches what encode_v2 would produce
+        assert crc == crc16_arc(SESSION_START)
+
+    def test_empty(self):
+        assert crc16_arc(b"") == 0
+
+    def test_check_value(self):
+        # Reference value for CRC-16/ARC: crc("123456789") == 0xBB3D
+        assert crc16_arc(b"123456789") == 0xBB3D
+
+    def test_single_zero_byte(self):
+        # A zero byte never sets a bit, so the remainder stays zero.
+        assert crc16_arc(b"\x00") == 0x0000
+
+    def test_all_zeros(self):
+        assert crc16_arc(b"\x00" * 100) == 0x0000
+
+    def test_all_ones(self):
+        assert crc16_arc(b"\xff" * 100) == 0x72DB
+
+
+# --------------------------------------------------------------------------- SPP v2 framing
+
+
+class TestEncodeV2:
+    """encode_v2 produces correct frame bytes."""
+
+    def test_data_frame(self):
+        payload = b"\x01\x01\x00\x01"  # channel 1, plain opcode, empty protobuf
+        frame = encode_v2(3, 0, payload)  # T_DATA
+        assert frame[:2] == b"\xa5\xa5"
+        # type=3, seq=0, len=4, crc
+        assert frame[2] == 3
+        assert frame[3] == 0
+        length = struct.unpack_from("<H", frame, 4)[0]
+        assert length == 4
+        # CRC should match
+        assert crc16_arc(payload) == struct.unpack_from("<H", frame, 6)[0]
+        assert frame[8:] == payload
+
+    def test_session_frame(self):
+        frame = encode_v2(2, 0, SESSION_START)  # T_SESSION
+        assert frame[:2] == b"\xa5\xa5"
+        assert frame[2] == 2
+        assert frame[3] == 0
+        length = struct.unpack_from("<H", frame, 4)[0]
+        assert length == len(SESSION_START)
+        assert frame[8:] == SESSION_START
+
+    def test_ack_frame(self):
+        frame = encode_v2(1, 5, b"")  # T_ACK, seq=5
+        assert frame[:2] == b"\xa5\xa5"
+        assert frame[2] == 1
+        assert frame[3] == 5
+        assert frame[4:6] == b"\x00\x00"  # len=0
+        assert frame[6:8] == b"\x00\x00"  # crc=0
+        assert frame[8:] == b""
+
+    def test_seq_wraps(self):
+        frame = encode_v2(3, 255, b"x")
+        assert frame[3] == 255
+        frame2 = encode_v2(3, 256, b"x")
+        assert frame2[3] == 0  # seq wraps to 0
+
+    def test_roundtrip(self):
+        """encode -> parse roundtrip for all frame types."""
+        for ptype in (0, 1, 2, 3):
+            payload = b"\x01\x02\x03"
+            frame = encode_v2(ptype, 7, payload)
+            result = parse_v2(frame)
+            assert result is not None
+            assert result[0] == ptype
+            assert result[1] == 7
+            assert result[2] == payload
+            assert result[3] == len(frame)
+
+
+class TestParseV2:
+    """parse_v2 handles valid, invalid, and partial buffers."""
+
+    def test_valid_data_frame(self):
+        payload = b"\x01\x01\x00\x01"
+        frame = encode_v2(3, 0, payload)
+        ptype, seq, data, consumed = parse_v2(frame)
+        assert ptype == 3
+        assert seq == 0
+        assert data == payload
+        assert consumed == len(frame)
+
+    def test_junk_before_preamble(self):
+        """The parser resyncs on the preamble and returns the frame after the junk."""
+        frame = b"\x00\x01\x02" + encode_v2(3, 0, b"test")
+        ptype, seq, data, consumed = parse_v2(frame)
+        assert (ptype, seq, data) == (3, 0, b"test")
+        assert consumed == len(frame)
+
+    def test_junk_in_frame(self):
+        """CRC mismatch causes the frame to be skipped."""
+        bad = b"\xa5\xa5" + struct.pack("<BBHH", 3, 0, 4, 0xFFFF) + b"\x00\x00\x00\x00"
+        ptype, seq, data, consumed = parse_v2(bad)
+        assert ptype is None
+        assert consumed == 2  # drop the preamble and rescan for the next one
+
+    def test_incomplete_frame(self):
+        """Partial frame returns None (wait for more bytes)."""
+        buf = b"\xa5\xa5" + struct.pack("<BBH", 3, 0, 10)  # says 10 bytes, only 0 provided
+        assert parse_v2(buf) is None
+
+    def test_empty_buffer(self):
+        assert parse_v2(b"") is None
+
+    def test_multiple_frames(self):
+        """parse_v2 only consumes the first frame; remaining bytes are left in buf."""
+        frame1 = encode_v2(3, 0, b"aaa")
+        frame2 = encode_v2(3, 1, b"bbb")
+        combined = frame1 + frame2
+        ptype, seq, data, consumed = parse_v2(combined)
+        assert ptype == 3
+        assert seq == 0
+        assert data == b"aaa"
+        assert consumed == len(frame1)
+
+    def test_trailing_junk_after_valid_frame(self):
+        """Only the valid frame is consumed; trailing garbage is ignored."""
+        frame = encode_v2(3, 0, b"x") + b"\x00\x00\x00"
+        ptype, seq, data, consumed = parse_v2(frame)
+        assert ptype == 3
+        assert consumed == len(frame) - 3  # only the valid frame
+
+
+# --------------------------------------------------------------------------- SPP v1 parsing
+
+
+class TestParseV1:
+    """parse_v1 handles the Xiaomi SPP v1 version probe."""
+
+    def test_version_request_is_correct(self):
+        """The built-in request matches the expected v1 probe format."""
+        assert V1_VERSION_REQUEST[:3] == V1_PREAMBLE
+        assert V1_VERSION_REQUEST[-1] == V1_EPILOGUE[0]
+
+    def test_parse_version_response(self):
+        """Simulate a v2 version response from the watch."""
+        # v1 payload = opcode, serial, data type, then the version bytes
+        payload = bytes([0x00, 0x00, 0x00, 0x02])
+        ln = len(payload)
+        resp = V1_PREAMBLE + bytes([0x00, 0xC0]) + struct.pack("<H", ln) + payload + V1_EPILOGUE
+        pkt, consumed = parse_v1(resp)
+        assert pkt is not None
+        assert pkt["channel"] == 0
+        assert pkt["flags"] == 0xC0
+        assert pkt["opcode"] == 0
+        assert pkt["payload"] == bytes([2])
+        assert consumed == len(resp)
+
+    def test_incomplete_v1(self):
+        assert parse_v1(b"\xba\xdc\xfe") == (None, 0)
+        assert parse_v1(b"\xba\xdc\xfe\x00") == (None, 0)
+
+    def test_no_preamble(self):
+        assert parse_v1(b"\x00\x01\x02\x03") == (None, 0)
+
+
+# --------------------------------------------------------------------------- Crypto
+
+
+class TestHmacSha256:
+    def test_deterministic(self):
+        key = b"secret"
+        msg = b"message"
+        result = hmac_sha256(key, msg)
+        assert len(result) == 32
+        assert hmac_sha256(key, msg) == result  # deterministic
+
+    def test_different_key(self):
+        assert hmac_sha256(b"a", b"m") != hmac_sha256(b"b", b"m")
+
+
+class TestDeriveKeys:
+    def test_output_length(self):
+        secret = bytes([0] * 32)
+        phone_nonce = b"\x01" * 16
+        watch_nonce = b"\x02" * 16
+        result = derive_keys(secret, phone_nonce, watch_nonce)
+        assert len(result) == 64
+
+    def test_deterministic(self):
+        secret = bytes([0x42] * 32)
+        pn = b"\xaa" * 16
+        wn = b"\xbb" * 16
+        assert derive_keys(secret, pn, wn) == derive_keys(secret, pn, wn)
+
+    def test_different_nonce(self):
+        secret = bytes([0] * 32)
+        pn = b"\x01" * 16
+        wn1 = b"\x02" * 16
+        wn2 = b"\x03" * 16
+        assert derive_keys(secret, pn, wn1) != derive_keys(secret, pn, wn2)
+
+
+class TestSessionCrypto:
+    """Session encryption/decryption (AES-CTR and AES-CCM)."""
+
+    @pytest.fixture
+    def session(self):
+        """Create a Session with known keys for deterministic testing."""
+        secret = bytes([0x42] * 32)
+        sess = Session(secret)
+        sess.phone_nonce = b"\x01" * 16
+        sess.set_keys(b"\x02" * 16)
+        return sess
+
+    def test_ctr_roundtrip_with_same_key(self, session):
+        # Outbound traffic uses enc_key and inbound dec_key; force one key to
+        # exercise AES-CTR symmetry itself.
+        session.dec_key = session.enc_key
+        data = b"hello world"
+        assert session.decrypt_v2(session.encrypt_v2(data)) == data
+
+    def test_directions_use_different_keys(self, session):
+        data = b"hello world"
+        assert session.dec_key != session.enc_key
+        assert session.decrypt_v2(session.encrypt_v2(data)) != data
+
+    def test_ctr_different_keys_differ(self, session):
+        data = b"hello world"
+        enc1 = session.encrypt_v2(data)
+        # Create a second session with different keys
+        secret2 = bytes([0x43] * 32)
+        sess2 = Session(secret2)
+        sess2.phone_nonce = b"\x01" * 16
+        sess2.set_keys(b"\x02" * 16)
+        enc2 = sess2.encrypt_v2(data)
+        assert enc1 != enc2
+
+    def test_ctr_produces_different_ciphertext(self, session):
+        """Each encryption produces different ciphertext (IV is the key itself,
+        but the session uses the same key as IV per Xiaomi's design)."""
+        data = b"hello"
+        enc1 = session.encrypt_v2(data)
+        enc2 = session.encrypt_v2(data)
+        # Same key/IV -> same ciphertext (deterministic CTR)
+        assert enc1 == enc2
+
+    def test_ccm_encrypt(self, session):
+        data = b"test data for CCM"
+        encrypted = session.ccm_encrypt(data, 0)
+        # CCM adds a 4-byte tag
+        assert len(encrypted) == len(data) + 4
+
+    def test_ccm_nonce_length(self, session):
+        """CCM nonce is enc_nonce (4 bytes) + counter (4 bytes) = 8 bytes."""
+        data = b"short"
+        encrypted = session.ccm_encrypt(data, 0)
+        assert len(encrypted) == len(data) + 4

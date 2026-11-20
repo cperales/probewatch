@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Harness (make check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Sync dependencies
+        run: uv sync --frozen --python /usr/bin/python3
+      - name: Run the harness
+        run: make check
+
+  protos:
+    name: Protobuf bootstrap
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Sync dependencies
+        run: uv sync --frozen --python /usr/bin/python3
+      - name: Fetch and regenerate (pinned, checksummed)
+        run: ./fetch_protos.sh
+      - name: Import the generated modules
+        run: |
+          uv run python - <<'PY'
+          import sys
+          sys.path.insert(0, "src/xiaomi_pb")
+          import xiaomi_pb2
+          from xiaomi import wear_account_pb2, wear_system_pb2
+          print("protobuf modules import OK")
+          PY
