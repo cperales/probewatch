@@ -20,8 +20,10 @@ Console usage:
   uv run python src/xiaomi_client.py --send 2 34                 # empty get
   uv run python src/xiaomi_client.py --send 2 25 \\
       --payload 'type: 2 subtype: 25 system { raiseToWake { mode: 2 } }'
-  uv run python src/xiaomi_client.py --listen 30                 # connect, dump unsolicited
   uv run python src/xiaomi_client.py --send 2 18 --listen 10     # find-device, then listen
+  uv run python src/xiaomi_client.py --send 2 18 --channel 6     # send on channel 6 (OTA)
+  uv run python src/xiaomi_client.py --send 2 18 --opcode read   # query opcode
+  uv run python src/xiaomi_client.py --listen 30                 # connect, dump unsolicited
   uv run python src/xiaomi_client.py --capture                   # record every frame, NDJSON
 
 Legacy usage (hardcoded queries):
@@ -193,8 +195,26 @@ def parse_v1(buf: bytes):
 # --------------------------------------------------------------------------- SPP v2 framing
 V2_PREAMBLE = b"\xa5\xa5"
 T_NACK, T_ACK, T_SESSION, T_DATA = 0, 1, 2, 3
+
+# Channels (from Gadgetbridge's L2Packet.Channel / ChannelType)
 CH_PROTOBUF, CH_DATA, CH_ACTIVITY = 1, 2, 5
-OP_PLAIN, OP_ENCRYPTED = 1, 2
+CH_MASS_VOICE, CH_FILE_SENSOR, CH_OTA = 3, 4, 6
+CH_NETWORK, CH_LYRA, CH_RESEARCH = 7, 8, 9
+
+# Channel name table for display and capture
+CHANNEL_NAMES: dict[int, str] = {
+    1: "PB",
+    2: "MASS",
+    3: "VOICE",
+    4: "SENSOR",
+    5: "FITNESS",
+    6: "OTA",
+    7: "NET",
+    8: "LYRA",
+    9: "RESEARCH",
+}
+
+OP_WRITE, OP_WRITE_ENC, OP_READ = 1, 2, 3
 
 # Sending anything resets the watch's ~20 s idle timer, so a long listen needs a ping.
 KEEPALIVE_COMMAND = (2, 1)  # battery: read-only, cheap, always answered
@@ -308,8 +328,8 @@ class Session:
 
 # --------------------------------------------------------------------------- client
 class XiaomiWatch:
-    def __init__(self, mac: str, channel: int, secret: bytes, capture: Capture | None = None):
-        self.mac, self.channel = mac, channel
+    def __init__(self, mac: str, l2_channel: int, secret: bytes, capture: Capture | None = None):
+        self.mac, self.l2_channel = mac, l2_channel
         self.sess = Session(secret)
         self.tx_seq = 0
         self.inbox: list[xiaomi_pb2.Command] = []
@@ -319,26 +339,26 @@ class XiaomiWatch:
         self._nacked: set[int] = set()  # seqs we already retransmitted
 
     # -- low level
-    def _send_data(self, channel: int, opcode: int, payload: bytes) -> bytes:
+    def _send_data(self, opcode: int, payload: bytes) -> bytes:
         """Build and send a DATA frame, returning the full encoded frame for retransmit."""
-        body = bytes([channel & 0x0F, opcode]) + (
-            self.sess.encrypt_v2(payload) if opcode == OP_ENCRYPTED else payload
+        body = bytes([self.l2_channel & 0x0F, opcode]) + (
+            self.sess.encrypt_v2(payload) if opcode == OP_WRITE_ENC else payload
         )
         seq = self.tx_seq
         frame = encode_v2(T_DATA, seq, body)
         self.link.send(frame)
         self.tx_seq = (seq + 1) & 0xFF
         if self.capture:
-            self.capture.frame("tx", T_DATA, seq, channel, opcode, payload)
+            self.capture.frame("tx", T_DATA, seq, self.l2_channel, opcode, payload)
         return frame
 
     def send_command(self, cmd: xiaomi_pb2.Command):
         log("send cmd", cmd.type, cmd.subtype)
         seq = self.tx_seq  # capture before _send_data increments it
         if cmd.type == 1:  # auth -> plaintext on the protobuf channel
-            frame = self._send_data(CH_PROTOBUF, OP_PLAIN, cmd.SerializeToString())
+            frame = self._send_data(OP_WRITE, cmd.SerializeToString())
         else:
-            frame = self._send_data(CH_PROTOBUF, OP_ENCRYPTED, cmd.SerializeToString())
+            frame = self._send_data(OP_WRITE_ENC, cmd.SerializeToString())
         self._sent[seq] = frame  # track full encoded frame for NACK retransmit
 
     def _pump(self, timeout: float):
@@ -376,10 +396,18 @@ class XiaomiWatch:
                     log(f"short DATA frame ({len(payload)} bytes), ignored")
                     continue
                 ch, op, data = payload[0] & 0x0F, payload[1], payload[2:]
-                if op == OP_ENCRYPTED:
+                if op == OP_WRITE_ENC:
                     data = self.sess.decrypt_v2(data)
                 if self.capture:
                     self.capture.frame("rx", ptype, seq, ch, op, data)
+                name = CHANNEL_NAMES.get(ch, f"CH{ch}")
+                if op == OP_READ:
+                    verb = "read"
+                elif op == OP_WRITE_ENC:
+                    verb = "write_enc"
+                else:
+                    verb = "write"
+                print(f"  [{name}] ch{ch} {verb} {len(data)} B")
                 if ch == CH_PROTOBUF:
                     cmd = xiaomi_pb2.Command()
                     try:
@@ -406,8 +434,8 @@ class XiaomiWatch:
 
     # -- connection steps
     def connect(self):
-        print(f"[1] RFCOMM connect {self.mac} channel {self.channel} ...")
-        self.link = Rfcomm(self.mac, self.channel)
+        print(f"[1] RFCOMM connect {self.mac} channel 2 (SPP) ...")
+        self.link = Rfcomm(self.mac, 2)
 
         print("[2] SPP version probe ...")
         self.link.send(V1_VERSION_REQUEST)
@@ -433,6 +461,10 @@ class XiaomiWatch:
             self._pump(1)
         if not self.session_ok:
             raise RuntimeError("no session config response")
+
+        # Auth commands always go on channel 1 (PB)
+        saved_ch = self.l2_channel
+        self.l2_channel = CH_PROTOBUF
 
         print("[4] auth step 1: send phone nonce ...")
         c = xiaomi_pb2.Command(type=1, subtype=26)
@@ -470,6 +502,9 @@ class XiaomiWatch:
             raise RuntimeError("no answer to auth step 3")
         print("    AUTHENTICATED ✓  " + text_format.MessageToString(r.auth, as_one_line=True))
         self.sess.encrypted = True
+
+        # Restore the user-specified L2 channel
+        self.l2_channel = saved_ch
 
     def request(self, ctype: int, subtype: int, timeout: float = 8):
         self.send_command(xiaomi_pb2.Command(type=ctype, subtype=subtype))
@@ -552,9 +587,22 @@ def main():
     p.add_argument(
         "mac", nargs="?", default=None, help="watch MAC (default: secrets/device.md or $WATCH_MAC)"
     )
-    p.add_argument("--channel", type=int, default=2)
+    p.add_argument(
+        "--channel",
+        type=int,
+        default=1,
+        dest="l2_channel",
+        help="L2 channel (default 1 = protobuf)",
+    )
     p.add_argument("--key-file", default=KEY_FILE)
     p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument(
+        "--opcode",
+        type=str,
+        default="write",
+        choices=["write", "write_enc", "read"],
+        help="L2 opcode for --send (default write)",
+    )
     p.add_argument(
         "--send",
         nargs=2,
@@ -606,6 +654,10 @@ def main():
     if a.payload and len(a.send) > 1:
         p.error("--payload applies to a single --send")
 
+    # Resolve opcode string to constant
+    opcode_map = {"write": OP_WRITE, "write_enc": OP_WRITE_ENC, "read": OP_READ}
+    opcode = opcode_map[a.opcode]
+
     capture = None
     mac = resolve_mac(a.mac)  # validate before creating a capture file
     key = load_key(a.key_file)
@@ -613,15 +665,17 @@ def main():
         capture = Capture(a.capture or default_capture_path())
         print(f"Capturing every frame to {capture.path}")
 
-    w = XiaomiWatch(mac, a.channel, key, capture=capture)
+    w = XiaomiWatch(mac, a.l2_channel, key, capture=capture)
     try:
         w.connect()
 
         # --send: one or more commands, each waiting for its response
         for ctype, subtype in a.send or []:
             cmd = build_command(ctype, subtype, a.payload)
-            print(f"Sending command {ctype}/{subtype} ...")
-            r = w.send_command_with_retransmit(cmd, a.timeout)
+            print(f"Sending command {ctype}/{subtype} on ch{a.l2_channel} ({a.opcode}) ...")
+            frame = w._send_data(opcode, cmd.SerializeToString())
+            w._sent[w.tx_seq - 1] = frame  # track for NACK retransmit
+            r = w.wait_for(ctype, subtype, a.timeout)
             if r is None:
                 print("(no answer)")
                 if len(a.send) == 1 and not a.listen:

@@ -428,13 +428,13 @@ class TestDrain:
 
     def test_drain_empty_inbox(self):
         """Drain on an empty inbox is a no-op."""
-        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 2, b"\x00" * 32)
+        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 1, b"\x00" * 32)
         # link is None, but drain doesn't touch it
         w.drain()  # should not raise
 
     def test_drain_prints_all_commands(self):
         """Drain pops every command from inbox and prints them."""
-        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 2, b"\x00" * 32)
+        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 1, b"\x00" * 32)
         cmd1 = xiaomi_pb2.Command(type=2, subtype=1)
         cmd2 = xiaomi_pb2.Command(type=2, subtype=2)
         w.inbox.append(cmd1)
@@ -465,7 +465,7 @@ class TestNackRetransmit:
 
     def _make_watch(self):
         """Create a XiaomiWatch with encrypted session and fake link."""
-        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 2, b"\x00" * 32)
+        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 1, b"\x00" * 32)
         # Initialize session keys so encryption works without auth
         w.sess.phone_nonce = b"\x01" * 16
         w.sess.set_keys(b"\x02" * 16)
@@ -549,7 +549,7 @@ class TestCapture:
 
     def _make_watch(self, tmp_path):
         capture = Capture(str(tmp_path / "capture.ndjson"))
-        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 2, b"\x00" * 32, capture=capture)
+        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 1, b"\x00" * 32, capture=capture)
         w.sess.phone_nonce = b"\x01" * 16
         w.sess.set_keys(b"\x02" * 16)
         sent: list[bytes] = []
@@ -626,7 +626,7 @@ class TestCapture:
 
     def test_capture_is_optional(self):
         """Without a capture object the client behaves exactly as before."""
-        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 2, b"\x00" * 32)
+        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 1, b"\x00" * 32)
         assert w.capture is None
 
 
@@ -638,7 +638,7 @@ class TestKeepalive:
 
     def _make_watch(self, tmp_path):
         capture = Capture(str(tmp_path / "capture.ndjson"))
-        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 2, b"\x00" * 32, capture=capture)
+        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 1, b"\x00" * 32, capture=capture)
         w.sess.phone_nonce = b"\x01" * 16
         w.sess.set_keys(b"\x02" * 16)
         sent: list[bytes] = []
@@ -674,3 +674,143 @@ class TestKeepalive:
         w, sent = self._make_watch(tmp_path)
         w.listen(0.05)
         assert sent == []
+
+
+# --------------------------------------------------------------------------- L2 prefix
+
+from xiaomi_client import (  # noqa: E402
+    CH_ACTIVITY,
+    CH_DATA,
+    CH_FILE_SENSOR,
+    CH_LYRA,
+    CH_MASS_VOICE,
+    CH_NETWORK,
+    CH_OTA,
+    CH_PROTOBUF,
+    CH_RESEARCH,
+    CHANNEL_NAMES,
+    OP_READ,
+    OP_WRITE,
+    OP_WRITE_ENC,
+)
+
+
+class TestL2Prefix:
+    """_send_data builds the correct [channel, opcode] prefix for every combination."""
+
+    def _make_watch(self):
+        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 1, b"\x00" * 32)
+        w.sess.phone_nonce = b"\x01" * 16
+        w.sess.set_keys(b"\x02" * 16)
+        w.sess.encrypted = True
+        sent: list[bytes] = []
+
+        class FakeLink:
+            def __init__(self):
+                self.buf = b""
+
+            def send(self, data: bytes):
+                sent.append(data)
+
+            def fill(self, timeout: float) -> bool:
+                return False
+
+            def close(self):
+                pass
+
+        w.link = FakeLink()
+        return w, sent
+
+    def _parse_l2(self, frame: bytes):
+        """Extract channel and opcode from a DATA frame."""
+        _, _, body, _ = parse_v2(frame)
+        return body[0] & 0x0F, body[1]
+
+    def test_channel_1_write(self):
+        w, sent = self._make_watch()
+        w._send_data(OP_WRITE, b"test")
+        ch, op = self._parse_l2(sent[0])
+        assert ch == CH_PROTOBUF
+        assert op == OP_WRITE
+
+    def test_channel_1_write_enc(self):
+        w, sent = self._make_watch()
+        w._send_data(OP_WRITE_ENC, b"test")
+        ch, op = self._parse_l2(sent[0])
+        assert ch == CH_PROTOBUF
+        assert op == OP_WRITE_ENC
+
+    def test_channel_6_ota(self):
+        w, sent = self._make_watch()
+        w.l2_channel = CH_OTA
+        w._send_data(OP_WRITE, b"ota")
+        ch, op = self._parse_l2(sent[0])
+        assert ch == CH_OTA
+        assert op == OP_WRITE
+
+    def test_channel_9_research(self):
+        w, sent = self._make_watch()
+        w.l2_channel = CH_RESEARCH
+        w._send_data(OP_READ, b"")
+        ch, op = self._parse_l2(sent[0])
+        assert ch == CH_RESEARCH
+        assert op == OP_READ
+
+    def test_channel_4_sensor(self):
+        w, sent = self._make_watch()
+        w.l2_channel = CH_FILE_SENSOR
+        w._send_data(OP_WRITE_ENC, b"sensor")
+        ch, op = self._parse_l2(sent[0])
+        assert ch == CH_FILE_SENSOR
+        assert op == OP_WRITE_ENC
+
+    def test_channel_3_voice(self):
+        w, sent = self._make_watch()
+        w.l2_channel = CH_MASS_VOICE
+        w._send_data(OP_WRITE, b"voice")
+        ch, op = self._parse_l2(sent[0])
+        assert ch == CH_MASS_VOICE
+        assert op == OP_WRITE
+
+    def test_channel_7_network(self):
+        w, sent = self._make_watch()
+        w.l2_channel = CH_NETWORK
+        w._send_data(OP_WRITE_ENC, b"net")
+        ch, op = self._parse_l2(sent[0])
+        assert ch == CH_NETWORK
+        assert op == OP_WRITE_ENC
+
+    def test_channel_8_lyra(self):
+        w, sent = self._make_watch()
+        w.l2_channel = CH_LYRA
+        w._send_data(OP_READ, b"")
+        ch, op = self._parse_l2(sent[0])
+        assert ch == CH_LYRA
+        assert op == OP_READ
+
+    def test_channel_5_fitness(self):
+        w, sent = self._make_watch()
+        w.l2_channel = CH_ACTIVITY
+        w._send_data(OP_WRITE, b"fit")
+        ch, op = self._parse_l2(sent[0])
+        assert ch == CH_ACTIVITY
+        assert op == OP_WRITE
+
+    def test_channel_2_mass(self):
+        w, sent = self._make_watch()
+        w.l2_channel = CH_DATA
+        w._send_data(OP_WRITE, b"mass")
+        ch, op = self._parse_l2(sent[0])
+        assert ch == CH_DATA
+        assert op == OP_WRITE
+
+    def test_all_channels_have_names(self):
+        """Every known channel has a name in CHANNEL_NAMES."""
+        for ch in range(1, 10):
+            assert ch in CHANNEL_NAMES, f"channel {ch} missing from CHANNEL_NAMES"
+
+    def test_all_opcodes_mapped(self):
+        """OP_WRITE, OP_WRITE_ENC, OP_READ are distinct constants."""
+        assert OP_WRITE == 1
+        assert OP_WRITE_ENC == 2
+        assert OP_READ == 3

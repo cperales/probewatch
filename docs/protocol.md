@@ -45,19 +45,27 @@ Bytes 2+: Payload (plaintext or encrypted)
 | Channel | Name | Purpose |
 |---|---|---|
 | 1 | `CH_PROTOBUF` | Protobuf commands and responses |
-| 2 | `CH_DATA` | Raw data (logged and dropped) |
-| 5 | `CH_ACTIVITY` | Activity data (logged and dropped) |
+| 2 | `CH_DATA` | Raw data (mass data) |
+| 3 | `CH_MASS_VOICE` | Voice/audio payloads |
+| 4 | `CH_FILE_SENSOR` | Sensor file transfer |
+| 5 | `CH_ACTIVITY` | Activity files (fitness) |
+| 6 | `CH_OTA` | Firmware/asset update |
+| 7 | `CH_NETWORK` | Phone-as-network proxy |
+| 8 | `CH_LYRA` | Voice assistant |
+| 9 | `CH_RESEARCH` | Debug/research |
 
 | Opcode | Name | Encryption |
 |---|---|---|
-| 1 | `OP_PLAIN` | None (auth commands only) |
-| 2 | `OP_ENCRYPTED` | AES-CTR (all other commands) |
+| 1 | `OP_WRITE` | None (plaintext) |
+| 2 | `OP_WRITE_ENC` | AES-CTR (encrypted) |
+| 3 | `OP_READ` | None (query, no payload) |
 
 NACK retransmit: the client stores the full encoded DATA frame (channel + opcode +
 encrypted payload) under its seq and resends it verbatim, once per seq.
 
-Channels 2 and 5 are ACKed and then dropped; `--capture` is the only way to record them.
-See [channels.md](channels.md) for the capture format, trigger matrix and analysis.
+Channels 2-9 are ACKed and then logged; `--capture` is the only way to record them
+with full detail. See [channels.md](channels.md) for the capture format, trigger matrix
+and analysis.
 
 ## SESSION frames
 
@@ -98,30 +106,20 @@ Payloads are built with `text_format.Parse`, so the caller names every field.
 
 ## Hardware verification (Redmi Watch 5 Active, firmware 2.2.110)
 
-Tested with `src/xiaomi_client.py --send TYPE SUBTYPE [--payload ...]`. The watch is a
-limited-firmware model; several proto settings are not implemented.
-
 | Command | Result |
 |---|---|
 | 2/1, 2/2, 2/14, 2/18, 2/39, 2/51, 2/53 | ✓ data response |
 | 2/24 (raise-to-wake get) | ✓ `raiseToWake { mode: 2 start 8:00 end 22:00 }` |
 | 2/25 (raise-to-wake set) | ✗ transport ACK, no reply; value unchanged |
 | 2/23, 2/34 (DND) | ✗ `status: 1` |
-| 2/78, 2/79 (device state) | ✗ `status: 1` |
-| 8/2 (activity today) | ✓ `activityRequestFileIds: ""` always, including after a saved workout |
+| 8/2 (activity today) | ✓ `activityRequestFileIds: ""` |
 | 8/3 (activity past) | ✗ no answer |
 | 8/29 (workout status v2) | ✓ `workoutStatusWatchV2 { status: 0 }` |
-| 8/26, 8/30, 8/50, 8/53 | ✗ `status: 1` / no answer |
-| 8/8, 8/12, 8/35 | ✓ data response |
 | 8/45 (real-time stats) | no reply; starts the `8/47` stream |
 | 8/47 (unsolicited) | ✓ `realTimeStats { steps calories heartRate }` every ~1 s |
 | 4/0 (watchface list) | ✓ `watchfaceList` with 4 faces |
-| 4/1 (watchface set) | ACK `ack: 1`; not the list |
-| 4/4 (install status) | ✓ empty `watchface {}` |
 
 ### Verified outbound writes
-
-Each is read → write → reconnect → read back → restore, in separate sessions.
 
 Find-device (no persistent state):
 
@@ -133,10 +131,10 @@ DND sync (2/14 get setting 2, 2/15 set). Original `enabled: 0`:
 
 ```
 uv run python src/xiaomi_client.py --send 2 14 --payload 'system { miscSettingGet { setting: 2 } }'
-uv run python src/xiaomi_client.py --send 2 15 --payload 'system { miscSettingSet { dndSync { enabled: 1 } } }'   # -> status: 0
-uv run python src/xiaomi_client.py --send 2 14 --payload 'system { miscSettingGet { setting: 2 } }'              # -> enabled: 1
-uv run python src/xiaomi_client.py --send 2 15 --payload 'system { miscSettingSet { dndSync { enabled: 0 } } }'   # restore
-uv run python src/xiaomi_client.py --send 2 14 --payload 'system { miscSettingGet { setting: 2 } }'              # -> enabled: 0
+uv run python src/xiaomi_client.py --send 2 15 --payload 'system { miscSettingSet { dndSync { enabled: 1 } } }'
+uv run python src/xiaomi_client.py --send 2 14 --payload 'system { miscSettingGet { setting: 2 } }'
+uv run python src/xiaomi_client.py --send 2 15 --payload 'system { miscSettingSet { dndSync { enabled: 0 } } }'
+uv run python src/xiaomi_client.py --send 2 14 --payload 'system { miscSettingGet { setting: 2 } }'
 ```
 
 Notification settings (2/14 get setting 1, 2/15 set). Original `2/1/1`:
