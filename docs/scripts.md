@@ -103,8 +103,10 @@ The `-v` flag is the first thing to use on protocol failures — it shows every 
 wire.
 
 Channel 6 (OTA) speaks the app's own `0x5A` framing: `--ota-require` sends the read-only
-`REQUIRE` handshake and prints the decoded page size, interval and timeout. See
-[ota.md](ota.md) for the protocol.
+`REQUIRE` handshake and prints the decoded page size, interval and timeout. That is the
+`ota_type = 1` engine; the Redmi Watch 5 Active reports `ota_type = 2` and updates over the
+mass channel, so expect no answer on channel 6. See [ota.md](ota.md) and
+[firmware.md](firmware.md).
 
 ### `src/probe_extra.py`
 
