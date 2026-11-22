@@ -151,7 +151,11 @@ class Rfcomm:
 
     def send(self, data: bytes):
         log("TX", data.hex(" "))
-        os.write(self.fd, data)
+        # A 64 KiB (MPS) frame can exceed what one os.write accepts; write it all.
+        view = memoryview(data)
+        while view:
+            written = os.write(self.fd, view)
+            view = view[written:]
 
     def fill(self, timeout: float) -> bool:
         r, _, _ = select.select([self.fd], [], [], timeout)
@@ -328,73 +332,232 @@ class Session:
 
 # --------------------------------------------------------------------------- client
 class XiaomiWatch:
+    """SPP v2 client with selective-repeat ARQ (window 32, 10 s retransmit).
+
+    The peer runs a real selective-repeat ARQ on top of the ``A5 A5`` framing.
+    This class tracks a send window, delays ACKs, detects duplicates, and
+    retransmits on NAK or timeout.
+    """
+
+    # ARQ parameters (from Gadgetbridge's SAR_DEFAULT_* constants)
+    TX_WINDOW: int = 32  # max unacked DATA frames in flight
+    REMOTE_WINDOW: int = 4  # peer's advertised window
+    SEND_TIMEOUT: float = 10.0  # retransmit unacked DATA after this many seconds
+    CUM_ACK_TIMEOUT: float = 0.5  # flush a delayed ACK after a quiet burst
+    ACK_THRESHOLD: int = TX_WINDOW * 2 // 3  # pending ACKs that force an immediate ACK
+
     def __init__(self, mac: str, l2_channel: int, secret: bytes, capture: Capture | None = None):
         self.mac, self.l2_channel = mac, l2_channel
         self.sess = Session(secret)
-        self.tx_seq = 0
+        self.tx_base: int = 0  # oldest unacked seq
+        self.tx_next: int = 0  # next seq to send
+        self.rx_expect: int = 0  # next expected incoming seq
+        self.rx_pending: int = 0  # in-order DATA frames received since the last ACK
+        self.ack_deadline: float | None = None  # when to flush the delayed ACK
         self.inbox: list[xiaomi_pb2.Command] = []
         self.link: Rfcomm | None = None
         self.capture = capture
-        self._sent: dict[int, bytes] = {}  # seq -> encoded DATA frame for NACK retransmit
-        self._nacked: set[int] = set()  # seqs we already retransmitted
+        # Insertion-ordered: oldest unacked first. An ACK releases every entry up to its seq.
+        self._sent: dict[int, bytes] = {}  # seq -> encoded DATA frame
+        self._sent_times: dict[int, float] = {}  # seq -> last send timestamp
+
+    @property
+    def pending_count(self) -> int:
+        """Number of DATA frames sent but not ACKed yet."""
+        return len(self._sent)
 
     # -- low level
-    def _send_data(self, opcode: int, payload: bytes) -> bytes:
-        """Build and send a DATA frame, returning the full encoded frame for retransmit."""
+    def _send_data(self, opcode: int, payload: bytes) -> bytes | None:
+        """Build and send a DATA frame, returning the full encoded frame for retransmit.
+
+        Returns ``None`` when the send window is full; the caller should pump
+        the link until space opens.
+        """
+        if self.pending_count >= self.TX_WINDOW:
+            log(f"window full ({self.pending_count}/{self.TX_WINDOW}), cannot send")
+            return None
+
         body = bytes([self.l2_channel & 0x0F, opcode]) + (
             self.sess.encrypt_v2(payload) if opcode == OP_WRITE_ENC else payload
         )
-        seq = self.tx_seq
+        seq = self.tx_next
         frame = encode_v2(T_DATA, seq, body)
         self.link.send(frame)
-        self.tx_seq = (seq + 1) & 0xFF
+        self.tx_next = (seq + 1) & 0xFF
+        self._sent[seq] = frame
+        self._sent_times[seq] = time.time()
         if self.capture:
             self.capture.frame("tx", T_DATA, seq, self.l2_channel, opcode, payload)
         return frame
 
     def send_command(self, cmd: xiaomi_pb2.Command):
         log("send cmd", cmd.type, cmd.subtype)
-        seq = self.tx_seq  # capture before _send_data increments it
         if cmd.type == 1:  # auth -> plaintext on the protobuf channel
-            frame = self._send_data(OP_WRITE, cmd.SerializeToString())
+            self._send_data(OP_WRITE, cmd.SerializeToString())
         else:
-            frame = self._send_data(OP_WRITE_ENC, cmd.SerializeToString())
-        self._sent[seq] = frame  # track full encoded frame for NACK retransmit
+            self._send_data(OP_WRITE_ENC, cmd.SerializeToString())
+
+    def _send_ack(self, seq: int) -> None:
+        """Send an ACK frame for *seq*."""
+        self.link.send(encode_v2(T_ACK, seq, b""))
+        log("ack", seq)
+
+    def _send_nak(self, seq: int) -> None:
+        """Ask the peer to retransmit from *seq* (the first frame we are missing)."""
+        self.link.send(encode_v2(T_NACK, seq, b""))
+        log("nak, watch expects", seq)
+
+    def _retransmit(self, seq: int) -> None:
+        """Resend a tracked DATA frame verbatim and restart its timeout."""
+        frame = self._sent.get(seq)
+        if frame is None:
+            return
+        log("retransmitting seq", seq)
+        self.link.send(frame)
+        self._sent_times[seq] = time.time()
+
+    def _ack_received(self, seq: int) -> None:
+        """Release every tracked frame up to and including *seq*.
+
+        Sequence numbers are 8 bit and wrap, so *seq* is looked up in the
+        insertion-ordered ``_sent`` map instead of being compared numerically:
+        an ACK for a frame we never sent releases nothing.
+        """
+        if seq not in self._sent:
+            log(f"ack for untracked seq {seq}, ignoring")
+            return
+        released = 0
+        for s in list(self._sent):
+            del self._sent[s]
+            self._sent_times.pop(s, None)
+            released += 1
+            if s == seq:
+                break
+        self.tx_base = (seq + 1) & 0xFF
+        log(f"ack {seq} ({released} released, {self.pending_count} pending)")
+
+    def _ack_now(self, seq: int) -> None:
+        """Send the cumulative ACK for *seq* and drop any pending delayed ACK."""
+        self._send_ack(seq & 0xFF)
+        self.rx_pending = 0
+        self.ack_deadline = None
+
+    def _flush_due(self) -> None:
+        """Fire the delayed ACK and any per-frame retransmit timers that are due."""
+        now = time.time()
+        if self.ack_deadline is not None and now >= self.ack_deadline:
+            # rx_expect is the first missing seq, so this ACKs everything before it.
+            self._ack_now(self.rx_expect - 1)
+        for seq, sent_at in list(self._sent_times.items()):
+            if now - sent_at >= self.SEND_TIMEOUT:
+                self._retransmit(seq)
 
     def _pump(self, timeout: float):
-        """Read and handle frames until `timeout` seconds pass without a complete frame."""
+        """Read and handle frames until ``timeout`` seconds pass without a complete frame.
+
+        Implements the SAR selective-repeat ARQ:
+        - Delayed ACKs: immediate for payload[0] in {1, 8} or after
+          ``ACK_THRESHOLD`` pending frames, otherwise after 500 ms of quiet.
+        - Duplicate suppression (unsigned diff >= 128 → drop silently).
+        - Out-of-order NAK carrying the first missing seq.
+        - Retransmit on timeout (10 s, per frame) and on NAK (range retransmit).
+        - Window accounting (refuse to send past 32 unacked frames).
+        """
         end = time.time() + timeout
         while True:
+            self._flush_due()
+
             res = parse_v2(self.link.buf)
             if res is None:
-                remaining = end - time.time()
-                if remaining <= 0 or not self.link.fill(remaining):
+                now = time.time()
+                remaining = end - now
+                if remaining <= 0:
                     return
-                continue
+                # Never sleep past a timer: cap the read by the next deadline so the
+                # delayed ACK and retransmits fire even when the peer is quiet.
+                wait = remaining
+                ack_due = self.ack_deadline
+                if ack_due is not None:
+                    wait = min(wait, max(0.0, ack_due - now))
+                retransmit_due = None
+                if self._sent_times:
+                    retransmit_due = min(self._sent_times.values()) + self.SEND_TIMEOUT
+                    wait = min(wait, max(0.0, retransmit_due - now))
+                if self.link.fill(wait):
+                    continue
+                now = time.time()
+                if now >= end:
+                    return
+                if (ack_due is not None and now >= ack_due) or (
+                    retransmit_due is not None and now >= retransmit_due
+                ):
+                    continue  # a timer was the reason the read ended; service it
+                return
+
             ptype, seq, payload, used = res
             self.link.buf = self.link.buf[used:]
             if ptype is None:
                 continue
+
             if ptype != T_DATA and self.capture:
                 self.capture.frame("rx", ptype, seq, data=payload)
+
             if ptype == T_ACK:
-                log("ack", seq)
+                self._ack_received(seq)
+
             elif ptype == T_NACK:
                 log("nack, watch expects", seq)
-                if seq in self._sent and seq not in self._nacked:
-                    log("retransmitting command for seq", seq)
-                    self.link.send(self._sent[seq])  # verbatim DATA body
-                    self._nacked.add(seq)
+                # The peer ACKs whatever it already had: release up to seq-1 first.
+                previous = (seq - 1) & 0xFF
+                if previous in self._sent:
+                    self._ack_received(previous)
+                if not self._sent or next(iter(self._sent)) != seq:
+                    log(f"nack for seq {seq}, which is not the oldest unacked, ignoring")
+                    continue
+                # Retransmit every unacked frame from seq onwards, oldest first.
+                for s in list(self._sent):
+                    self._retransmit(s)
+
             elif ptype == T_SESSION:
                 log("session config from watch, opcode", payload[:1].hex(), payload.hex(" "))
                 self.session_ok = True
+
             elif ptype == T_DATA:
-                self.link.send(encode_v2(T_ACK, seq, b""))  # ACK first: never delay it
+                # Duplicate detection (unsigned arithmetic)
+                diff = (seq - self.rx_expect) & 0xFF
+                if diff >= 128:
+                    log(f"stale duplicate seq {seq}, dropping")
+                    continue
+
+                # Out-of-order: NAK the first missing seq so the peer resends from there.
+                if seq != self.rx_expect:
+                    log(f"out-of-order seq {seq}, expected {self.rx_expect}, sending NAK")
+                    if self.rx_pending:
+                        self._ack_now(self.rx_expect - 1)
+                    self._send_nak(self.rx_expect)
+                    continue
+
+                # In-order: process
+                self.rx_expect = (seq + 1) & 0xFF
+                self.rx_pending += 1
+
+                # Immediate for "control" channels 1 and 8, or once enough ACKs are pending;
+                # otherwise a 500 ms timer (armed once, not reset by every frame) flushes it.
+                if (
+                    len(payload) < 2
+                    or payload[0] in (1, 8)
+                    or self.rx_pending >= self.ACK_THRESHOLD
+                ):
+                    self._ack_now(seq)
+                elif self.ack_deadline is None:
+                    self.ack_deadline = time.time() + self.CUM_ACK_TIMEOUT
+
                 if len(payload) < 2:  # a DATA frame needs the channel/opcode header
                     if self.capture:
                         self.capture.frame("rx", ptype, seq, data=payload, note="short data")
                     log(f"short DATA frame ({len(payload)} bytes), ignored")
                     continue
+
                 ch, op, data = payload[0] & 0x0F, payload[1], payload[2:]
                 if op == OP_WRITE_ENC:
                     data = self.sess.decrypt_v2(data)
@@ -542,6 +705,12 @@ class XiaomiWatch:
                 print(
                     f"[{cmd.type}/{cmd.subtype}] {text_format.MessageToString(cmd, as_one_line=True)}"
                 )
+            if VERBOSE:
+                print(
+                    f"  [window] tx_base={self.tx_base} tx_next={self.tx_next} "
+                    f"rx_expect={self.rx_expect} pending={self.pending_count}",
+                    file=sys.stderr,
+                )
 
     def drain(self) -> None:
         """Drain the inbox and print every queued command."""
@@ -673,8 +842,16 @@ def main():
         for ctype, subtype in a.send or []:
             cmd = build_command(ctype, subtype, a.payload)
             print(f"Sending command {ctype}/{subtype} on ch{a.l2_channel} ({a.opcode}) ...")
-            frame = w._send_data(opcode, cmd.SerializeToString())
-            w._sent[w.tx_seq - 1] = frame  # track for NACK retransmit
+            data = cmd.SerializeToString()
+            deadline = time.time() + a.timeout
+            frame = w._send_data(opcode, data)
+            while frame is None and time.time() < deadline:
+                # Window is full: pump ACKs through, then retry the same frame.
+                w._pump(min(1.0, deadline - time.time()))
+                frame = w._send_data(opcode, data)
+            if frame is None:
+                print("send window still full, skipping this command")
+                continue
             r = w.wait_for(ctype, subtype, a.timeout)
             if r is None:
                 print("(no answer)")

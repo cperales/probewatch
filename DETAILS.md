@@ -116,6 +116,14 @@ analiza en frío con `src/decode_capture.py`; el método y los resultados están
 `docs/channels.md`. Como la sesión dura ~25 s, las pruebas largas se hacen en ventanas y
 con `--send` repetible.
 
+## ARQ y tamaño de trama (2026-11-22)
+
+| Hecho | Detalle |
+|---|---|
+| Ventana de envío | El reloj hace ACK acumulativo por seq de 8 bits. 300 comandos seguidos (cruce 255→0) drenan la ventana sin un solo reintento y con 300/300 respuestas |
+| Ráfaga sin esperar respuesta | 40 comandos seguidos: el cliente deja de enviar al llegar a 32 sin ACK y reanuda al liberarse la ventana; 40/40 respuestas |
+| Trama grande | 16 KB de payload por frame: 20 frames (320 KB) en ~3 s, 20/20 respuestas. Una trama de 24 KB cierra el enlace (límite práctico por debajo del MPS anunciado) |
+
 ## Datos leídos del reloj (2026-11-16)
 
 | Campo | Valor |

@@ -5,12 +5,16 @@ any Bluetooth hardware or network access.
 """
 
 import struct
+import time
 
 import pytest
 
 # Import from src/ via conftest sys.path
 from xiaomi_client import (
     SESSION_START,
+    T_ACK,
+    T_DATA,
+    T_NACK,
     V1_EPILOGUE,
     V1_PREAMBLE,
     V1_VERSION_REQUEST,
@@ -489,14 +493,14 @@ class TestNackRetransmit:
         w.link = FakeLink()
         return w, sent_frames
 
-    def test_one_retransmit_per_seq(self):
-        """A NACK for seq 0 triggers exactly one retransmit of the same command."""
+    def test_nack_retransmits_command(self):
+        """A NACK for seq 0 triggers a verbatim retransmit of the same command."""
         w, sent_frames = self._make_watch()
 
         # Build a command and send it
         cmd = xiaomi_pb2.Command(type=2, subtype=34)
         w.send_command(cmd)
-        assert w.tx_seq == 1  # incremented after send
+        assert w.tx_next == 1  # incremented after send
         assert 0 in w._sent  # tracked by seq 0
 
         # Simulate a NACK for seq 0 in the link buffer
@@ -516,11 +520,8 @@ class TestNackRetransmit:
         ptype, _, _, _ = parse_v2(sent_frames[1])
         assert ptype == 3, f"retransmit should be DATA, got type {ptype}"
 
-        # After retransmit, _nacked contains seq 0 so a second NACK is ignored
-        assert 0 in w._nacked
-
-    def test_second_nack_ignored(self):
-        """A second NACK for the same seq does not trigger another retransmit."""
+    def test_repeated_nack_retransmits_again(self):
+        """A second NACK for the same seq means it is still missing: resend it."""
         w, sent_frames = self._make_watch()
 
         cmd = xiaomi_pb2.Command(type=2, subtype=18)
@@ -531,17 +532,31 @@ class TestNackRetransmit:
         w._pump(0)
         assert len(sent_frames) == 2  # original + retransmit
 
-        # Second NACK for the same seq — should be ignored
+        # Second NACK for the same seq: the peer still has not got it
         w.link.buf = encode_v2(0, 0, b"")
         w._pump(0)
-        assert len(sent_frames) == 2  # no additional retransmit
+        assert len(sent_frames) == 3  # another retransmit
+
+    def test_nack_for_unsent_seq_ignored(self):
+        """A NACK for a seq we never sent cannot release or resend anything."""
+        w, sent_frames = self._make_watch()
+        for _ in range(3):
+            w.send_command(xiaomi_pb2.Command(type=2, subtype=1))
+        sent_frames.clear()
+
+        w.link.buf = encode_v2(T_NACK, 50, b"")
+        w._pump(0)
+
+        assert sent_frames == []
+        assert w.tx_base == 0
+        assert w.pending_count == 3
 
 
 # --------------------------------------------------------------------------- capture
 
 import json  # noqa: E402
 
-from xiaomi_client import T_ACK, T_DATA, Capture  # noqa: E402
+from xiaomi_client import Capture  # noqa: E402
 
 
 class TestCapture:
@@ -581,6 +596,8 @@ class TestCapture:
         plain = xiaomi_pb2.Command(type=2, subtype=1).SerializeToString()
         body = bytes([1, 2]) + w.sess._ctr(w.sess.dec_key, plain)  # watch -> phone key
         w.link.buf = encode_v2(T_DATA, 7, body)
+        # Set rx_expect so seq 7 is treated as in-order (not out-of-order)
+        w.rx_expect = 7
 
         w._pump(0)
         records = self._records(capture)
@@ -607,6 +624,8 @@ class TestCapture:
         """A DATA frame without the channel/opcode header is recorded, not an IndexError."""
         w, sent, capture = self._make_watch(tmp_path)
         w.link.buf = encode_v2(T_DATA, 9, b"\x01")  # one byte: no opcode
+        # Set rx_expect so seq 9 is treated as in-order (not out-of-order)
+        w.rx_expect = 9
 
         w._pump(0)  # must not raise
         records = self._records(capture)
@@ -814,3 +833,309 @@ class TestL2Prefix:
         assert OP_WRITE == 1
         assert OP_WRITE_ENC == 2
         assert OP_READ == 3
+
+
+# --------------------------------------------------------------------------- ARQ state machine
+
+
+class TestARQStateMachine:
+    """Unit tests for the selective-repeat ARQ state machine.
+
+    These tests drive the state machine with synthetic ACK/NAK/timeout sequences
+    to verify: out-of-order arrival, duplicate suppression, retransmit-after-NAK,
+    and window exhaustion.
+    """
+
+    def _make_watch(self):
+        """Create a XiaomiWatch with encrypted session and fake link."""
+        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 1, b"\x00" * 32)
+        w.sess.phone_nonce = b"\x01" * 16
+        w.sess.set_keys(b"\x02" * 16)
+        w.sess.encrypted = True
+
+        sent_frames: list[bytes] = []
+
+        class FakeLink:
+            def __init__(self):
+                self.buf = b""
+
+            def send(self, data: bytes):
+                sent_frames.append(data)
+
+            def fill(self, timeout: float) -> bool:
+                return False
+
+            def close(self):
+                pass
+
+        w.link = FakeLink()
+        return w, sent_frames
+
+    def test_out_of_order_sends_nak(self):
+        """An out-of-order DATA frame triggers a NAK, not an ACK."""
+        w, sent_frames = self._make_watch()
+        # Set rx_expect so seq 5 is "in-order" for the first frame
+        w.rx_expect = 5
+        body = bytes([1, 1]) + b"\x00" * 4
+        w.link.buf = encode_v2(T_DATA, 5, body)
+        w._pump(0)
+
+        # Should have sent an ACK for seq 5
+        acks = [f for f in sent_frames if parse_v2(f)[0] == T_ACK]
+        assert len(acks) == 1
+        _, ack_seq, _, _ = parse_v2(acks[0])
+        assert ack_seq == 5
+
+        # Now send seq 7 (out-of-order: rx_expect=6, diff=(7-6)=1 < 128, not stale)
+        w.link.buf = encode_v2(T_DATA, 7, body)
+        w._pump(0)
+
+        # The NAK must carry the first missing seq (6), not the seq that arrived
+        naks = [f for f in sent_frames if parse_v2(f)[0] == T_NACK]
+        assert len(naks) == 1
+        _, nak_seq, _, _ = parse_v2(naks[0])
+        assert nak_seq == 6
+
+    def test_duplicate_suppression(self):
+        """A DATA frame whose seq - expected >= 128 (unsigned) is dropped silently."""
+        w, sent_frames = self._make_watch()
+        # Set rx_expect so seq 100 is "in-order"
+        w.rx_expect = 100
+        body = bytes([1, 1]) + b"\x00" * 4
+
+        # Send seq 100 (in-order)
+        w.link.buf = encode_v2(T_DATA, 100, body)
+        w._pump(0)
+        assert len(sent_frames) == 1  # ACK for seq 100
+
+        # Send seq 10 (unsigned diff = 10 - 100 = -90 → 166 >= 128 → stale duplicate)
+        w.link.buf = encode_v2(T_DATA, 10, body)
+        w._pump(0)
+
+        # No additional frames should be sent (duplicate dropped silently)
+        assert len(sent_frames) == 1
+
+    def test_retransmit_after_nak_range(self):
+        """A NAK for seq N releases everything before it and resends from N onwards."""
+        w, sent_frames = self._make_watch()
+
+        # Send 3 commands (seq 0, 1, 2)
+        for _i in range(3):
+            cmd = xiaomi_pb2.Command(type=2, subtype=1)
+            w.send_command(cmd)
+
+        assert w.tx_next == 3
+        assert w.pending_count == 3
+
+        # Simulate a NACK for seq 1
+        w.link.buf = encode_v2(T_NACK, 1, b"")
+        w._pump(0)
+
+        # seq 0 is treated as acknowledged locally; 1 and 2 are resent, oldest first.
+        # No ACK is emitted: the NAK already told the peer what we have.
+        assert w.tx_base == 1
+        assert [parse_v2(f)[1] for f in sent_frames if parse_v2(f)[0] == T_DATA] == [
+            0,
+            1,
+            2,
+            1,
+            2,
+        ]
+        assert not [f for f in sent_frames if parse_v2(f)[0] == T_ACK]
+
+    def test_window_exhaustion(self):
+        """Sending past TX_WINDOW returns None; window opens after ACK."""
+        w, sent_frames = self._make_watch()
+
+        # Fill the window (32 frames succeed, 33rd is rejected)
+        for i in range(33):
+            cmd = xiaomi_pb2.Command(type=2, subtype=1)
+            result = w._send_data(OP_WRITE_ENC, cmd.SerializeToString())
+            if i < 32:
+                assert result is not None, f"frame {i} should have been sent"
+            else:
+                assert result is None, "frame 33 should return None (window full)"
+
+        assert w.pending_count == 32
+        assert w.tx_next == 32
+
+        # Simulate an ACK for seq 31 (cumulative)
+        w.link.buf = encode_v2(T_ACK, 31, b"")
+        w._pump(0)
+
+        # Window should have opened; next send should succeed
+        cmd = xiaomi_pb2.Command(type=2, subtype=2)
+        result = w._send_data(OP_WRITE_ENC, cmd.SerializeToString())
+        assert result is not None, "should be able to send after window opens"
+        assert w.pending_count == 1  # only the new frame is pending
+
+    def test_cumulative_ack_advances_tx_base(self):
+        """A cumulative ACK for seq N advances tx_base past N."""
+        w, sent_frames = self._make_watch()
+
+        # Send 5 commands
+        for _i in range(5):
+            cmd = xiaomi_pb2.Command(type=2, subtype=1)
+            w.send_command(cmd)
+
+        assert w.tx_base == 0
+        assert w.tx_next == 5
+        assert w.pending_count == 5
+
+        # Simulate a cumulative ACK for seq 4
+        w.link.buf = encode_v2(T_ACK, 4, b"")
+        w._pump(0)
+
+        # tx_base should advance past 4
+        assert w.tx_base == 5
+        assert w.pending_count == 0
+
+    def test_delayed_ack_timer(self):
+        """When pending count is low, ACK is delayed until the 500 ms timer fires."""
+        w, sent_frames = self._make_watch()
+        # Set rx_expect so seq 0 is "in-order"
+        w.rx_expect = 0
+        body = bytes([2, 1]) + b"\x00" * 4  # opcode 1 (not 1 or 8), so delayed ACK
+
+        w.link.buf = encode_v2(T_DATA, 0, body)
+        w._pump(0)
+
+        # No ACK should have been sent yet (timer not fired)
+        acks = [f for f in sent_frames if parse_v2(f)[0] == T_ACK]
+        assert len(acks) == 0
+        assert w.ack_deadline is not None
+
+        # Let the 500 ms timer expire
+        w.ack_deadline = 0.0
+        w._pump(0)
+
+        # Now an ACK should have been sent, and the pending state cleared
+        acks = [f for f in sent_frames if parse_v2(f)[0] == T_ACK]
+        assert len(acks) == 1
+        _, ack_seq, _, _ = parse_v2(acks[0])
+        assert ack_seq == 0
+        assert w.rx_pending == 0
+        assert w.ack_deadline is None
+
+    def test_delayed_ack_timer_not_reset_by_later_frames(self):
+        """A burst must not postpone the ACK forever: the first deadline stands."""
+        w, sent_frames = self._make_watch()
+        body = bytes([2, 1]) + b"\x00" * 4
+        w.link.buf = encode_v2(T_DATA, 0, body)
+        w._pump(0)
+        first_deadline = w.ack_deadline
+        assert first_deadline is not None
+
+        w.link.buf = encode_v2(T_DATA, 1, body)
+        w._pump(0)
+
+        assert w.ack_deadline == first_deadline
+
+    def test_delayed_ack_flushed_at_threshold(self):
+        """ACK_THRESHOLD pending frames force an immediate ACK."""
+        w, sent_frames = self._make_watch()
+        body = bytes([2, 1]) + b"\x00" * 4
+        threshold = XiaomiWatch.ACK_THRESHOLD
+
+        for seq in range(threshold):
+            w.link.buf = encode_v2(T_DATA, seq, body)
+            w._pump(0)
+
+        acks = [f for f in sent_frames if parse_v2(f)[0] == T_ACK]
+        assert len(acks) == 1
+        _, ack_seq, _, _ = parse_v2(acks[0])
+        assert ack_seq == threshold - 1
+        assert w.rx_pending == 0
+
+    def test_cumulative_ack_across_wrap(self):
+        """ACKs keep releasing frames after the 8-bit sequence number wraps."""
+        w, _sent_frames = self._make_watch()
+        w.tx_base = 250
+        w.tx_next = 250
+
+        for _i in range(5):
+            w._send_data(OP_WRITE_ENC, b"\x08\x01\x02")
+        w.link.buf = encode_v2(T_ACK, 254, b"")
+        w._pump(0)
+        assert w.tx_base == 255
+        assert w.pending_count == 0
+
+        for _i in range(3):
+            w._send_data(OP_WRITE_ENC, b"\x08\x01\x02")  # seqs 255, 0, 1
+        w.link.buf = encode_v2(T_ACK, 1, b"")
+        w._pump(0)
+
+        assert w.tx_base == 2
+        assert w.tx_next == 2
+        assert w.pending_count == 0
+        assert w._sent == {}
+
+    def test_ack_for_unsent_seq_ignored(self):
+        """An ACK for a frame we never sent must not move the window."""
+        w, _sent_frames = self._make_watch()
+        for _i in range(3):
+            w.send_command(xiaomi_pb2.Command(type=2, subtype=1))
+
+        w.link.buf = encode_v2(T_ACK, 50, b"")
+        w._pump(0)
+
+        assert w.tx_base == 0
+        assert w.tx_next == 3
+        assert w.pending_count == 3
+
+    def test_stale_ack_ignored(self):
+        """A repeated ACK for an already released seq keeps the newer frames tracked."""
+        w, _sent_frames = self._make_watch()
+        for _i in range(3):
+            w.send_command(xiaomi_pb2.Command(type=2, subtype=1))
+
+        w.link.buf = encode_v2(T_ACK, 1, b"")
+        w._pump(0)
+        assert w.tx_base == 2
+        assert w.pending_count == 1
+
+        w.link.buf = encode_v2(T_ACK, 0, b"")
+        w._pump(0)
+
+        assert w.tx_base == 2
+        assert w.pending_count == 1
+
+    def test_timeout_retransmits_unacked(self):
+        """A frame unacked for SEND_TIMEOUT is resent on its own."""
+        w, sent_frames = self._make_watch()
+        for _i in range(2):
+            w.send_command(xiaomi_pb2.Command(type=2, subtype=1))
+        sent_frames.clear()
+
+        w._sent_times[0] = time.time() - XiaomiWatch.SEND_TIMEOUT - 1
+        w._pump(0)
+
+        resent = [parse_v2(f)[1] for f in sent_frames if parse_v2(f)[0] == T_DATA]
+        assert resent == [0]
+        assert w.pending_count == 2  # resending does not consume the window
+
+    def test_no_regression_single_frame_command(self):
+        """Single-frame commands (e.g. battery query) work exactly as before."""
+        w, sent_frames = self._make_watch()
+
+        # Send a battery query (single frame)
+        cmd = xiaomi_pb2.Command(type=2, subtype=1)
+        w.send_command(cmd)
+        assert w.tx_next == 1
+        assert w.pending_count == 1
+
+        # Simulate a response from the watch (encrypted with dec_key, phone decrypts with dec_key)
+        resp = xiaomi_pb2.Command(type=2, subtype=1)
+        # Use OP_WRITE_ENC (opcode 2) so the data gets decrypted
+        body = bytes([1, 2]) + w.sess._ctr(w.sess.dec_key, resp.SerializeToString())
+        w.link.buf = encode_v2(T_DATA, 0, body)
+        w._pump(0)
+
+        # Should have received the command in inbox
+        assert len(w.inbox) == 1
+        assert w.inbox[0].type == 2
+        assert w.inbox[0].subtype == 1
+
+        # And an ACK should have been sent (immediate for payload[0] == 1)
+        acks = [f for f in sent_frames if parse_v2(f)[0] == T_ACK]
+        assert len(acks) == 1
