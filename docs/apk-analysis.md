@@ -62,7 +62,8 @@ Config TLVs are `type u8, length u16, data`, and `CONFIG_TYPE_*` is
 21-byte blob the app sends is exactly the `SESSION_START` already documented in
 `protocol.md`: version `1.0.0`, MPS `64512`, window `32`, timeout `10000 ms`.
 
-Beyond that blob the app runs a real selective-repeat ARQ, which our client does not:
+Beyond that blob the app runs a real selective-repeat ARQ, which `src/xiaomi_client.py` now
+matches (window 32, delayed ACKs, NAK retransmit):
 
 | Constant | Value | Consequence |
 |---|---|---|
@@ -94,9 +95,9 @@ our client only decodes channel 1 and drops the rest:
 | 8 | `TRANSPORT_CHANNEL_LYRA` | 112 | voice assistant |
 | 9 | `TRANSPORT_CHANNEL_RESEARCH` | 113 | debug/research |
 
-Opcodes are `1` WRITE, `2` WRITE_ENC, and **`3` READ** — the third one is absent from our
-client and from `protocol.md`. Send priorities are channel 1 → 2, channel 3 → 3, channel
-7 → 1, everything else 0 (higher goes first among unassigned DATA).
+Opcodes are `1` WRITE, `2` WRITE_ENC, and `3` READ (the client exposes it as `--opcode read`).
+Send priorities are channel 1 → 2, channel 3 → 3, channel 7 → 1, everything else 0 (higher
+goes first among unassigned DATA).
 
 ## Encryption
 
@@ -113,8 +114,9 @@ client never negotiates it, but the peer may speak it on older firmware.
 ## What this unlocks, and what it does not
 
 - Channels 4, 5, 6, 7, 8 and 9 are reachable with the transport we already have; they need
-  only the ARQ above plus a payload schema. `OTA` (6) and `FILE_FITNESS` (5) are the ones
-  worth probing first, since they move bulk data.
+  a payload schema (the ARQ above is implemented). `OTA` (6) and `FILE_FITNESS` (5) are the
+  ones worth probing first, since they move bulk data — `OTA`'s full protocol is in
+  [ota.md](ota.md).
 - `OP_READ` (3) is a second verb on every channel — currently untested against the watch.
 - The L1 `CMD_L1STOP_*` flow lets us close a session cleanly instead of dropping RFCOMM.
 - **Not** recovered: the protobuf schemas. The app's watch messages are generated with a

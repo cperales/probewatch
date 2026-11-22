@@ -74,15 +74,17 @@ Full SPP v2 client: RFCOMM connect → version probe → session negotiation →
 authentication → protobuf queries.
 
 ```bash
-uv run python src/xiaomi_client.py [MAC] [--channel 2] [--key-file PATH] [-v]
+uv run python src/xiaomi_client.py [MAC] [--channel 1] [--key-file PATH] [-v]
 ```
 
 | Flag | Effect |
 |---|---|
-| `--channel N` | RFCOMM channel (default 2) |
+| `--channel N` | L2 channel (default 1 = protobuf; 6 = OTA) |
+| `--opcode MODE` | `write` (default), `write_enc`, or `read` for `--send` |
 | `--key-file PATH` | Auth key file (default `secrets/auth_key.txt`) |
 | `--send TYPE SUBTYPE` | Send a command, repeatable; empty body unless `--payload` is given |
 | `--payload TEXT` | `text_format` body for a single `--send` |
+| `--ota-require` | Send the read-only OTA `REQUIRE` handshake on channel 6 and decode the reply |
 | `--timeout SECONDS` | Per-command wait for a response (default 8) |
 | `--listen SECONDS` | Print unsolicited channel-1 frames for this long after connecting |
 | `--keepalive SECONDS` | During `--listen`, send a read-only query this often |
@@ -99,6 +101,10 @@ uv run python src/xiaomi_client.py [MAC] [--channel 2] [--key-file PATH] [-v]
 
 The `-v` flag is the first thing to use on protocol failures — it shows every frame on the
 wire.
+
+Channel 6 (OTA) speaks the app's own `0x5A` framing: `--ota-require` sends the read-only
+`REQUIRE` handshake and prints the decoded page size, interval and timeout. See
+[ota.md](ota.md) for the protocol.
 
 ### `src/probe_extra.py`
 
