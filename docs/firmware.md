@@ -61,11 +61,35 @@ Both live in this image, not in the app:
 - **Alarms**: `rt_rtc_control`, `drv.rtc`, `RTC use LXT`, `Init RTC, wake = %d` — an RTC
   compare/wake path on the LXT crystal.
 
+## Load map (verified)
+
+The image is a `ad ef cd af` SiFli container: a **0xa8-byte header**, then a Cortex-M image
+that runs from SRAM at **`0x20000000`**. So disassembly uses **file offset `0xa8` ↔ vaddr
+`0x20000000`** (carve `image[0xa8:]`, load base `0x20000000`, ARM little-endian, Thumb).
+
+The vector table is at the start of that image (file `0xa8`): initial `SP = 0x20036970`
+(top of a ~222 KB window), `reset = 0x20000909` (file `0x9b0`; prologue sets MSP then branches).
+Auto-analysis (Ghidra via REA, generic `ARM:LE:32:v7` — no Cortex-M profile, but the odd
+Thumb vectors seed it) finds **929 procedures / 795 strings**. Function names are not in the
+image, but RT-Thread logs its own `__func__`: the bare `name` literal is referenced only from
+inside the function that bears it, so an xref to it names the function. Example verified:
+`dfu_image_install_flash_lite` (literal `0x2002d0d4`) is referenced from 7 sites in
+`0x20011800–0x20011c3e` — that span is the installer body.
+
+The DFU/OTA installer (the watch side of the `ota_type = 2` update) is the densest named
+cluster: `dfu_offline_install[_lite]`, `dfu_offline_header_alloc`, `dfu_img_install[_flash]`,
+`dfu_image_install_flash_lite`, `dfu_packet_erase_flash`, `dfu_decompress`,
+`dfu_ota_bootloader_ram_run_set`, `dfu_reboot_install`, `dfu_ctrl_{reset_handler,
+boot_to_user_fw, update_prog_info, error_handle}`, `dfu_protocol_session_close`, `dfu_env`
+(`DFU_CTRL_OTA_MODE`), plus a `dfu_gui_*` on-watch progress screen. FAL/FlashDB are present as
+expected (`fal_init`, `fal_partition_{read,write,erase}`, `fdb_kvdb_init`). The SPP/BLE frame
+dispatcher and `mass`/`channel`/`auth` protocol strings are **not** in this slice — that code
+is elsewhere (likely a separate image part or the LCPU) and needs its own search.
+
 ## Next: disassembly
 
-1. Ghidra, ARM Cortex-M33, little-endian, Thumb-2; find the vector table at the start of the
-   app region (initial SP into SRAM, reset handler into the image).
-2. RT-Thread and the SiFli SDK are open source: diff the recovered code against them to name
+1. RT-Thread and the SiFli SDK are open source: diff the recovered code against them to name
    the scheduler, drivers, FAL/FlashDB and DFU routines.
-3. Then the pieces this repo cares about: the SPP/BLE frame dispatcher, the mass-file/DFU
-   handler, the DAC/audio path and the RTC/alarm scheduler.
+2. Then the pieces this repo cares about: the SPP/BLE frame dispatcher, the mass-file/DFU
+   handler (start from the `dfu_offline_install` / `dfu_image_install_flash_lite` cluster), the
+   DAC/audio path and the RTC/alarm scheduler (`rt_rtc_control`, `Init RTC, wake = %d`).
