@@ -23,6 +23,7 @@ Console usage:
   uv run python src/xiaomi_client.py --send 2 18 --listen 10     # find-device, then listen
   uv run python src/xiaomi_client.py --send 2 18 --channel 6     # send on channel 6 (OTA)
   uv run python src/xiaomi_client.py --send 2 18 --opcode read   # query opcode
+  uv run python src/xiaomi_client.py --ota-require               # read-only OTA handshake
   uv run python src/xiaomi_client.py --listen 30                 # connect, dump unsolicited
   uv run python src/xiaomi_client.py --capture                   # record every frame, NDJSON
 
@@ -286,6 +287,119 @@ def parse_v2(buf: bytes):
     return flags_type & 0x0F, seq, payload, i + 8 + ln
 
 
+# --------------------------------------------------------------------------- OTA channel (0x5A framing)
+# The app's `HyOtaExecutor` (product `ota_type == 1`) frames channel-6 payloads itself:
+# `0x5A`, a big-endian length, a segment flag/frame number, and a CRC-16/ARC over everything
+# after the magic. The body is `[SERVICE_ID][command][args]`. All integers here are
+# big-endian, unlike the L1 header. See docs/ota.md.
+OTA_MAGIC = 0x5A
+OTA_SERVICE_ID = 10
+OTA_FLAG_SINGLE, OTA_FLAG_FIRST, OTA_FLAG_MIDDLE, OTA_FLAG_LAST = 0, 1, 2, 3
+
+OTA_CMD_REQUIRE = 0
+OTA_CMD_START = 1
+OTA_CMD_DATA = 2
+OTA_CMD_ERROR = 3
+OTA_CMD_RESET = 4
+OTA_CMD_PROGRESS = 5
+OTA_CMD_SILENT_START = 6
+OTA_CMD_SILENT_PAUSE = 7
+
+OTA_CMD_NAMES: dict[int, str] = {
+    0: "REQUIRE",
+    1: "START",
+    2: "DATA",
+    3: "ERROR",
+    4: "RESET",
+    5: "PROGRESS",
+    6: "SILENT_START",
+    7: "SILENT_PAUSE",
+}
+
+OTA_MAX_SEGMENT_DATA = 4217  # HyOtaModel.MAX_SEGMENT_DATA_SIZE
+
+
+def encode_ota_segment(payload: bytes, flag: int = OTA_FLAG_SINGLE, frame_no: int = 0) -> bytes:
+    """Wrap *payload* in one 0x5A segment (big-endian length and CRC)."""
+    if len(payload) > OTA_MAX_SEGMENT_DATA:
+        raise ValueError(f"OTA payload is {len(payload)} B, max {OTA_MAX_SEGMENT_DATA}")
+    body = bytes([flag & 0xFF, frame_no & 0xFF]) + payload
+    head = bytes([OTA_MAGIC]) + struct.pack(">H", len(body))
+    return head + body + struct.pack(">H", crc16_arc(head[1:] + body))
+
+
+def parse_ota_segment(buf: bytes):
+    """Return (flag, frame_no, payload, consumed) for the first complete segment.
+
+    ``None`` means "wait for more bytes"; ``(None, 0, b"", consumed)`` means junk was
+    skipped and the caller should retry at *consumed*. A CRC mismatch is logged but
+    accepted, because the official app does not verify it on receive either.
+    """
+    i = buf.find(bytes([OTA_MAGIC]))
+    if i < 0:
+        return (None, 0, b"", len(buf)) if buf else None
+    if len(buf) - i < 5:
+        return None
+    length = struct.unpack_from(">H", buf, i + 1)[0]
+    if length < 2 or length > OTA_MAX_SEGMENT_DATA + 2:
+        return None, 0, b"", i + 1  # implausible length: skip this magic byte
+    total = length + 5
+    if len(buf) - i < total:
+        return None
+    flag, frame_no = buf[i + 3], buf[i + 4]
+    payload = buf[i + 5 : i + 3 + length]
+    crc = struct.unpack_from(">H", buf, i + 3 + length)[0]
+    if crc16_arc(buf[i + 1 : i + 3 + length]) != crc:
+        log("bad OTA segment CRC (accepted anyway, the app ignores it)")
+    return flag, frame_no, payload, i + total
+
+
+def encode_ota_command(cmd: int, body: bytes = b"") -> bytes:
+    """Build `[SERVICE_ID][command][body]`."""
+    return bytes([OTA_SERVICE_ID, cmd & 0xFF]) + body
+
+
+def parse_ota_command(payload: bytes) -> tuple[int, bytes] | None:
+    """Split a segment body into (command, args), or None if it is not ours."""
+    if len(payload) < 2 or payload[0] != OTA_SERVICE_ID:
+        return None
+    return payload[1], payload[2:]
+
+
+def ota_require_segment() -> bytes:
+    """The read-only `CMD_REQUIRE` probe: one segment with an empty body."""
+    return encode_ota_segment(encode_ota_command(OTA_CMD_REQUIRE))
+
+
+def decode_ota_require(args: bytes) -> tuple[int, int, int]:
+    """Return (page_size, interval_ms, timeout_ms) from a REQUIRE reply."""
+    if len(args) < 3:
+        raise ValueError(f"REQUIRE reply is {len(args)} B, expected 3")
+    return args[0] * 32, args[1] * 10, args[2] * 100
+
+
+def decode_ota_data(args: bytes) -> tuple[int, int, bytes]:
+    """Return (offset, length, page bitmap) from a DATA reply."""
+    if len(args) < 8:
+        raise ValueError(f"DATA reply is {len(args)} B, expected at least 8")
+    offset, length = struct.unpack_from(">II", args, 0)
+    return offset, length, args[8:]
+
+
+def decode_ota_error(args: bytes) -> tuple[int, str]:
+    """Return (code, description) from an ERROR reply."""
+    if not args:
+        raise ValueError("ERROR reply needs a code byte")
+    return args[0], args[1:].decode("utf-8", "replace")
+
+
+def decode_ota_progress(args: bytes) -> int:
+    """Return the percent from a PROGRESS reply."""
+    if not args:
+        raise ValueError("PROGRESS reply needs a percent byte")
+    return args[0]
+
+
 # --------------------------------------------------------------------------- crypto (XiaomiAuthService)
 def hmac_sha256(key: bytes, msg: bytes) -> bytes:
     return hmac.new(key, msg, hashlib.sha256).digest()
@@ -360,6 +474,8 @@ class XiaomiWatch:
         # Insertion-ordered: oldest unacked first. An ACK releases every entry up to its seq.
         self._sent: dict[int, bytes] = {}  # seq -> encoded DATA frame
         self._sent_times: dict[int, float] = {}  # seq -> last send timestamp
+        self.ota_parts: dict[int, bytes] = {}  # frame_no -> payload of a multi-segment body
+        self.ota_replies: list[tuple[int, bytes]] = []  # decoded channel-6 commands
 
     @property
     def pending_count(self) -> int:
@@ -580,8 +696,58 @@ class XiaomiWatch:
                         continue
                     log("recv cmd", cmd.type, cmd.subtype)
                     self.inbox.append(cmd)
+                elif ch == CH_OTA:
+                    self._handle_ota(data)
                 else:
                     log(f"data on channel {ch} ({len(data)} bytes) ignored")
+
+    def _handle_ota(self, data: bytes) -> None:
+        """Decode one channel-6 payload (0x5A segment) and record its `0A` command."""
+        res = parse_ota_segment(data)
+        if res is None:
+            log("incomplete OTA segment")
+            return
+        flag, frame_no, payload, _used = res
+        if flag is None:
+            log("junk before OTA segment")
+            return
+        if flag == OTA_FLAG_SINGLE:
+            self._deliver_ota(payload)
+            return
+        if flag == OTA_FLAG_FIRST:
+            self.ota_parts = {frame_no: payload}
+            return
+        self.ota_parts[frame_no] = payload
+        if flag == OTA_FLAG_LAST:
+            joined = b"".join(self.ota_parts[k] for k in sorted(self.ota_parts))
+            self.ota_parts = {}
+            self._deliver_ota(joined)
+
+    def _deliver_ota(self, payload: bytes) -> None:
+        """Record and print one reassembled OTA body."""
+        parsed = parse_ota_command(payload)
+        if parsed is None:
+            print(f"  [OTA] undecodable body {payload.hex()}")
+            return
+        cmd, args = parsed
+        self.ota_replies.append((cmd, args))
+        name = OTA_CMD_NAMES.get(cmd, f"cmd{cmd}")
+        try:
+            if cmd == OTA_CMD_REQUIRE:
+                page, interval, timeout = decode_ota_require(args)
+                print(f"  [OTA] {name}: page={page} B interval={interval} ms timeout={timeout} ms")
+            elif cmd == OTA_CMD_DATA:
+                offset, length, bitmap = decode_ota_data(args)
+                print(f"  [OTA] {name}: offset={offset} length={length} bitmap={bitmap.hex()}")
+            elif cmd == OTA_CMD_ERROR:
+                code, desc = decode_ota_error(args)
+                print(f"  [OTA] {name}: code={code} desc={desc!r}")
+            elif cmd == OTA_CMD_PROGRESS:
+                print(f"  [OTA] {name}: {decode_ota_progress(args)}%")
+            else:
+                print(f"  [OTA] {name}: args={args.hex()}")
+        except ValueError as e:
+            print(f"  [OTA] {name}: malformed reply ({e}): {args.hex()}")
 
     def wait_for(
         self, ctype: int, subtype: int | None, timeout: float = 10
@@ -773,6 +939,11 @@ def main():
         help="L2 opcode for --send (default write)",
     )
     p.add_argument(
+        "--ota-require",
+        action="store_true",
+        help="Send the read-only OTA REQUIRE handshake on channel 6 and print the reply",
+    )
+    p.add_argument(
         "--send",
         nargs=2,
         type=int,
@@ -859,6 +1030,26 @@ def main():
                     sys.exit(1)  # a lone send that expects an answer failed
                 continue
             print(f"Response: {text_format.MessageToString(r, as_one_line=True)}")
+
+        # --ota-require: the read-only HyperOS OTA handshake (channel 6, 0x5A framing)
+        if a.ota_require:
+            print("Sending OTA REQUIRE (5A 0A 00) on channel 6 ...")
+            w.l2_channel = CH_OTA
+            deadline = time.time() + a.timeout
+            frame = w._send_data(OP_WRITE, ota_require_segment())
+            while frame is None and time.time() < deadline:
+                w._pump(min(1.0, deadline - time.time()))
+                frame = w._send_data(OP_WRITE, ota_require_segment())
+            if frame is None:
+                print("send window still full, aborting the OTA probe")
+            else:
+                end = time.time() + a.timeout
+                while time.time() < end and not w.ota_replies:
+                    w._pump(min(1.0, end - time.time()))
+                if not w.ota_replies:
+                    print("(no OTA reply)")
+                    if not a.listen:
+                        sys.exit(1)
 
         # --listen: connect and listen for unsolicited frames
         if a.listen:
