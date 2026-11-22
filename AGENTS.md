@@ -1,214 +1,167 @@
 ## What this repo is
 
-ProbeWatch: Linux-side probes for a **Redmi Watch 5 Active** (model `M2351W1`): BLE discovery, BlueZ
+ProbeWatch: Linux-side probes for a **Redmi Watch 5 Active** (`M2351W1`): BLE discovery, BlueZ
 pairing, raw RFCOMM/L2CAP probes, an HFP audio test, and a Python port of Xiaomi's SPP v2
-protocol (framing, HKDF auth, AES, protobuf commands). Entrypoints live in `src/`, one
-standalone script per tool; `src/xiaomi_client.py` is the protocol client the others reuse.
+protocol. Entrypoints are standalone scripts in `src/`; `src/xiaomi_client.py` is the protocol
+client the others reuse. `CLAUDE.md` just imports this file.
 
 Device identifiers (watch MAC, serial, Mi Fitness id) and the SPP auth key live in the
-git-ignored `secrets/` directory — never in tracked files.
+git-ignored `secrets/` directory, never in tracked files.
 
 ## Harness
 
-`make check` is the contract, locally and in CI (`.github/workflows/ci.yml` runs the same
-target, so they cannot drift).
+`make check` is the contract; CI (`.github/workflows/ci.yml`) runs the same target.
 
 | Command | Does |
 |---|---|
 | `make setup` | `uv sync --python /usr/bin/python3` |
 | `make protos` | `./fetch_protos.sh`: pinned Gadgetbridge download + bindings |
 | `make check` | lint + tests + context budget + `compileall` |
-| `make lint` | `ruff check`, `ruff format --check`, `bash -n`, shellcheck, doc links |
+| `make lint` | `ruff check`, `ruff format --check`, `bash -n`/shellcheck on `fetch_protos.sh`, doc links |
 | `make test` | `uv run pytest`; fetches protos first if `src/xiaomi_pb/` is missing |
 | `make fmt` | `ruff format .` and `ruff check --fix .` |
-| `make sizes` | prints the context-budget table, fails on an oversized doc |
+| `make sizes` | context-budget table; fails if `AGENTS.md` > 12,000 B or a `docs/*.md` > 8,000 B |
 
-Nothing in `make check` needs the watch: `hardware`/`network` tests are deselected in
-`pyproject.toml`, and `tests/conftest.py` never reads or writes the real `secrets/`.
-
-Raw equivalents are the target bodies in the `Makefile`.
+Single test: `uv run pytest tests/test_xiaomi_client.py -k name`. Nothing in `make check` needs
+the watch: `hardware`/`network` markers are deselected by `addopts` in `pyproject.toml`.
+`make lint` also checks relative links in `README.md` and `docs/*.md`.
 
 ## Context budget
 
-A 128k model can read this repository, but not naively: `uv.lock`, the generated
-bindings, and `LICENSE` alone are ~86k tokens. `make sizes` prints the current numbers and
-fails if `AGENTS.md` > 12 KB or one `docs/` page > 8 KB.
-
-| Read | Policy |
-|---|---|
-| `AGENTS.md` | always (~3k tokens) |
-| `README.md`, `DETAILS.md`, `docs/*.md` | entry docs once; the rest on demand (~13k total) |
-| `src/*.py`, `tests/*.py` | read the file you are changing (~20k total) |
-| `proto/**/*.proto` | only the message you need (~9k total) |
-| `src/xiaomi_pb/`, `uv.lock`, `LICENSE` | **never** (generated / lockfile / legal text) |
+Never read `src/xiaomi_pb/`, `uv.lock`, `LICENSE` (generated / lockfile / legal, ~86k tokens).
+Read `proto/**/*.proto` only for the message you need, and `docs/*.md` on demand:
+`docs/README.md` indexes them (scripts and their flags: `docs/scripts.md`; wire format:
+`docs/protocol.md`; full channel table: `docs/apk-analysis.md`).
+`DETAILS.md` (Spanish) is the verified device reference (SDP services, protocol ids, firmware and
+battery facts, HFP measurements); update it when findings are confirmed on hardware.
 
 ## Python environment
 
-Run Python through uv: `uv run python ...`. Refresh with `uv sync --python /usr/bin/python3`.
-Dependencies belong in `pyproject.toml` (lockfile `uv.lock`); add a library there and run
-`uv sync`, never `pip install` into `.venv` by hand.
+Run Python through uv: `uv run python src/<tool>.py`. Add dependencies to `pyproject.toml` and
+`uv sync`; never `pip install` into `.venv`.
 
-`.venv` is Python 3.14 created from `/usr/bin/python3` and must stay that way. Only the
-distro build is compiled with Bluetooth support, so only it has `socket.AF_BLUETOOTH`; the
-CPython builds uv downloads do not, and the raw-socket probes (`src/spp_probe.py`,
-`src/a2dp_probe.py`) need it. That is why `pyproject.toml` sets
-`[tool.uv] python-preference = "system"` and why the sync command pins
-`--python /usr/bin/python3`. `bleak` reaches BlueZ over D-Bus, so it does not need the
-constant; everything installs from prebuilt wheels.
+`.venv` must be built from `/usr/bin/python3` (3.14). Only the distro build has
+`socket.AF_BLUETOOTH`; uv-downloaded CPythons do not, and `src/spp_probe.py` and
+`src/a2dp_probe.py` need it. `[tool.uv] python-preference = "system"` and the pinned sync
+command exist for this. `bleak` goes through BlueZ D-Bus and does not need the constant.
 
-`Rfcomm` in `src/xiaomi_client.py` opens its socket through `ctypes`/libc **on purpose**,
-even though the venv interpreter has `AF_BLUETOOTH`: that keeps `sockaddr_rc` explicit and
-works where `AF_BLUETOOTH` is missing. That struct stores the MAC **byte-reversed** — keep
-the reversal if you touch it.
+`Rfcomm` in `src/xiaomi_client.py` opens its socket via `ctypes`/libc **on purpose** (explicit
+`sockaddr_rc`, works without `AF_BLUETOOTH`). That struct stores the MAC **byte-reversed**; keep
+the reversal.
 
 ## Run-blocking prerequisites (most failures come from these)
 
-- Watch must be paired and trusted with this PC. Use `src/pair_watch.py --direct` when the
-  watch is still bound to Mi Fitness (it does not advertise then, so discovery-based pairing
-  fails). Pairing is interactive: the script drives `bluetoothctl` through `pexpect` and asks
-  you to tap ✓ on the watch when the passkey appears.
+- Watch must be paired and trusted with this PC. Use `src/pair_watch.py --direct` when it is
+  still bound to Mi Fitness (it does not advertise then, so discovery-based pairing fails).
+  Pairing is interactive (drives `bluetoothctl` via `pexpect`; tap ✓ on the watch).
 - **Never reset / unbind the watch from Mi Fitness**: that regenerates the auth key and
-  invalidates `secrets/auth_key.txt`. `--direct` exists precisely to avoid this.
-- Phone Bluetooth must be **off**: the watch talks to one client at a time and stops
-  advertising while connected to the phone (BLE scripts then see nothing).
+  invalidates `secrets/auth_key.txt`.
+- Phone Bluetooth must be **off**: the watch serves one client at a time and stops advertising
+  while connected to the phone.
 - `secrets/auth_key.txt` (32 hex chars) is required by `src/xiaomi_client.py` and
-  `src/probe_extra.py`. `secrets/` is git-ignored; never print or commit the key.
-- `secrets/device.md` holds the watch MAC, its serial, and any other identifiers; every
-  script resolves the MAC through `src/watch_secrets.py` (argument, then `$WATCH_MAC`, then
-  the `MAC:` line). Add new identifiers there, never to docs or code.
-- `proto/` and `src/xiaomi_pb/` are git-ignored too; run `make protos` once after cloning
-  or `src/xiaomi_client.py` fails on `import xiaomi_pb2`.
-
-## Layout
-
-| Path | Purpose |
-|---|---|
-| `src/find_watch.py`, `src/scan.py` | BLE discovery and Xiaomi-advert flags |
-| `src/watch_info.py`, `src/pair_watch.py` | GATT read; BlueZ pairing/trust |
-| `src/spp_probe.py`, `src/a2dp_probe.py` | passive RFCOMM log; AVDTP capabilities |
-| `src/xiaomi_client.py`, `src/probe_extra.py`, `src/decode_capture.py` | SPP v2 client; extra queries; capture analysis |
-| `src/audio_test.py`, `src/watch_secrets.py` | HFP test; MAC resolution (shared) |
-| `tests/`, `docs/`, `scripts/` | unit tests; long-form docs; harness helpers |
+  `src/probe_extra.py`. Never print or commit it.
+- Every script resolves the MAC via `resolve_mac()` in `src/watch_secrets.py` (argument, then
+  `$WATCH_MAC`, then the `MAC:` line of `secrets/device.md`). Add new identifiers to
+  `secrets/device.md`, never to docs or code.
+- `proto/` and `src/xiaomi_pb/` are git-ignored: run `make protos` once after cloning or
+  `import xiaomi_pb2` fails.
 
 ## `src/xiaomi_client.py` architecture
 
 One file, layered; each layer is used only by the one above:
 
-1. `Rfcomm` — RFCOMM socket opened via `ctypes`/libc; `fill()` appends to `link.buf`, and
-   every parser below consumes from its front (incomplete frame → `None`, bytes are kept).
-2. SPP v1 (`parse_v1`, `V1_VERSION_REQUEST`) — only the `BA DC FE … EF` version probe; aborts
+1. `Rfcomm`: `fill()` appends to `link.buf`; every parser consumes from its front (incomplete
+   frame → `None`, bytes are kept).
+2. SPP v1 (`parse_v1`, `V1_VERSION_REQUEST`): only the `BA DC FE … EF` version probe; aborts
    unless the watch reports v2.
-3. SPP v2 framing (`encode_v2`/`parse_v2`) — `A5 A5`, type/seq/len, CRC-16/ARC; frame types
-   NACK/ACK/SESSION/DATA; DATA payloads start with `[channel, opcode]` (1 = plain,
-   2 = encrypted). `SESSION_START` is a byte blob captured from the official app — do not
-   "clean it up". `parse_v2` has two shapes on purpose: `None` = incomplete (wait for more
-   bytes), and `(None, 0, b"", n)` = junk/CRC-skip (consume `n`); it resyncs on the next
-   `A5 A5`, so leading junk is consumed with the frame it precedes.
-4. `Session` — HKDF(phone nonce ‖ watch nonce) → 64 B, first 40 used as dec key / enc key /
-   dec nonce / enc nonce; normal traffic is AES-CTR with the key as IV, per message; AES-CCM
-   only for the phone-info blob in auth step 3.
-5. `XiaomiWatch` — `connect()` runs RFCOMM → version probe → session → 3 auth steps;
-   `_pump()` **ACKs every DATA frame**, decrypts, and queues `xiaomi_pb2.Command` objects in
-   `inbox`; `wait_for(type, subtype)` pops a matching command, `request(t, s)` = send empty
-   command + wait. Only `CH_PROTOBUF` (1) is decoded; traffic on other channels (`CH_DATA` 2,
-   `CH_ACTIVITY` 5) is logged and dropped.
+3. SPP v2 framing (`encode_v2`/`parse_v2`): `A5 A5`, type/seq/len, CRC-16/ARC; frame types
+   NACK/ACK/SESSION/DATA; DATA payloads start `[channel, opcode]`: channels `CH_*` 1-9,
+   opcodes `OP_WRITE` 1 (plain), `OP_WRITE_ENC` 2 (encrypted), `OP_READ` 3.
+   `SESSION_START` is a byte blob captured from the official app: do not "clean it up".
+   `parse_v2` has two shapes on purpose: `None` = incomplete (wait for more bytes),
+   `(None, 0, b"", n)` = junk/CRC-skip (consume `n`); it resyncs on the next `A5 A5`.
+4. `Session`: HKDF(phone nonce ‖ watch nonce) → 64 B, first 40 used as dec key / enc key / dec
+   nonce / enc nonce; traffic is AES-CTR with the key as IV, per message; AES-CCM only for the
+   phone-info blob in auth step 3.
+5. `XiaomiWatch`: `connect()` = RFCOMM → version probe → session → 3 auth steps (always on
+   channel 1; `l2_channel` is saved and restored around them). It runs a selective-repeat
+   ARQ: `TX_WINDOW` 32 unacked frames in `_sent` (insertion order, so cumulative ACKs work
+   across the 8-bit seq wrap), resend from the first missing seq on **every** NAK, per-frame
+   10 s retransmit. Incoming ACKs are delayed (500 ms timer armed once, or `ACK_THRESHOLD`
+   pending) except on channels 1 and 8, which are ACKed at once. `_send_data` returns `None`
+   when the window is full: pump and retry, never drop. `_pump()` decrypts and queues
+   `xiaomi_pb2.Command` in `inbox`; `wait_for(type, subtype)` pops a match, `request(t, s)` =
+   empty command + wait. Only `CH_PROTOBUF` (1) is decoded; other channels are logged and
+   dropped. 16 KB frames work; one 24 KB frame closes the link (`DETAILS.md`).
 
 Rules when extending it:
 
-- `type == 1` (auth) commands go out **plaintext**, every other type encrypted
-  (`send_command` decides); send non-auth commands only after `connect()` succeeds.
-- New experiments are command lines, not edits: `--send TYPE SUBTYPE [--payload text_format]`,
-  `--listen SECONDS`, `--capture [PATH]`. Ids come from Gadgetbridge's Xiaomi Java services,
-  response shapes from `proto/xiaomi.proto`.
-- `-v` traces every TX/RX frame in hex — the first thing to use on protocol failures.
+- `type == 1` (auth) commands go out **plaintext**, everything else encrypted (`send_command`
+  decides); send non-auth commands only after `connect()` succeeds.
+- New experiments are command lines, not edits: `--send TYPE SUBTYPE [--payload text_format]`
+  (repeatable; `--payload` needs exactly one `--send`), `--channel N`, `--opcode
+  write|write_enc|read`, `--timeout`, `--listen SECONDS`, `--keepalive`, `--capture [PATH]`
+  (default `captures/<timestamp>.ndjson`). CLI `--send` calls `_send_data` with `--opcode`
+  directly, so it does not go through `send_command`. Ids come from Gadgetbridge's
+  Xiaomi Java services, response shapes from `proto/xiaomi.proto`.
+- `-v` traces every TX/RX frame in hex: the first thing to use on protocol failures.
 
 ## Writing Python code
 
-Entrypoints live in `src/`, one standalone script per tool, run with
-`uv run python src/<tool>.py`. Keep new code in that shape:
-
-- stdlib first; a new third-party library means a line in `pyproject.toml` plus `uv sync`.
-- Type hints on every function signature. Use a class only when state is genuinely shared,
-  as in `XiaomiWatch`.
-- `argparse` under `if __name__ == "__main__":`, a thin `main()` that does the work; the
-  module docstring says what the script talks to, whether it is read-only, and carries a
-  `Usage:` line.
-- Constants at module top in `UPPER_CASE` (`DEFAULT_MAC`, `AVDTP_PSM`); no magic numbers
-  inline.
-- Paths: `HERE` is `src/`; repo-level files (`secrets/`, `recordings/`) go through
-  `ROOT = Path(__file__).resolve().parent.parent`. Never hardcode absolute paths.
-- Reuse protocol code by importing a sibling module (`from xiaomi_client import XiaomiWatch`,
-  as `src/probe_extra.py` does) instead of copying it into a new script.
-- Never hardcode a MAC, serial, or device id: take the MAC from `resolve_mac()` in
-  `src/watch_secrets.py`.
-- `print()` with f-strings for output, `.hex()` for bytes; no logging framework.
-- Double quotes, 4-space indent, 100 columns (`ruff` enforces it). Comment protocol facts a
-  reader cannot infer (`why` this byte), not what the next line does.
-
-## Legal framing
-
-Keep the language descriptive: "read", "query", "probe", "enumerate". Never write "bypass",
-"unlock", "jailbreak", "crack" or "hack". This is interoperability with a watch the author
-owns, not circumvention.
-
-Never add vendor assets (app, APK, firmware, logos), auth keys, or device identifiers to the
-repository. `README.md`'s Legal section is the canonical disclaimer; keep it intact and link to
-it instead of restating it.
+- stdlib first; type hints on every signature; a class only when state is genuinely shared.
+- `argparse` under `if __name__ == "__main__":` with a thin `main()`; the module docstring says
+  what it talks to, whether it is read-only, and has a `Usage:` line.
+- Constants at module top in `UPPER_CASE`. Repo-level paths via
+  `ROOT = Path(__file__).resolve().parent.parent`; never hardcode absolute paths.
+- Reuse protocol code by importing a sibling module (`from xiaomi_client import XiaomiWatch`),
+  not by copying.
+- `print()` with f-strings, `.hex()` for bytes; no logging framework.
+- Double quotes, 4-space indent, 100 columns (`ruff` enforces it; `E501` is ignored). Comment
+  protocol facts a reader cannot infer, not what the next line does.
 
 ## Tests
 
-`tests/` is pure logic: framing, CRC, crypto, codec decoding, MAC/key validation, CLI
-plumbing. No test may need the watch, the phone, or network access. Mark anything that does
-with `@pytest.mark.hardware` or `@pytest.mark.network` — the default `addopts` deselects
-both, so `make test` stays green on a laptop. Tests import from `src/` through
-`pythonpath = ["src"]` in `pyproject.toml`; fixtures live in `tests/conftest.py`, which
-must not touch the real `secrets/` (use `tmp_path` and `monkeypatch`).
+`tests/` is pure logic (framing, CRC, crypto, codec decoding, MAC/key validation, CLI
+plumbing). Anything needing the watch, phone, or network gets `@pytest.mark.hardware` /
+`@pytest.mark.network`. `tests/conftest.py` must never touch the real `secrets/`; use
+`tmp_path` and `monkeypatch`.
 
-## Protobuf bindings (`proto/`, `src/xiaomi_pb/`)
+## Protobuf bindings
 
-Neither directory is tracked. `./fetch_protos.sh` downloads the 14 `.proto` files from a
-pinned Gadgetbridge commit (each verified against a recorded SHA-256), writes
-`proto/SOURCE.md`, then regenerates `src/xiaomi_pb/` with:
+`./fetch_protos.sh` downloads 14 `.proto` files from a pinned Gadgetbridge commit (each checked
+against a SHA-256 in the script), writes `proto/SOURCE.md`, then runs
+`grpc_tools.protoc -Iproto --python_out=src/xiaomi_pb proto/xiaomi.proto proto/xiaomi/*.proto`.
+`--protos-only` stops after the download; `GADGETBRIDGE_REF=<commit-or-tag>` overrides the pin
+and skips checksums. A new upstream `.proto` needs a line and hash in the script. An "Import
+xiaomi/wear_common.proto is unused" warning is harmless.
 
-```
-uv run python -m grpc_tools.protoc -Iproto --python_out=src/xiaomi_pb \
-    proto/xiaomi.proto proto/xiaomi/*.proto
-```
+Keep the generated layout `src/xiaomi_pb/xiaomi_pb2.py` + `src/xiaomi_pb/xiaomi/*` (namespace
+package, no `__init__.py`): generated modules import each other as `from xiaomi import wear_*_pb2`
+and `xiaomi_client.py` puts `src/xiaomi_pb` on `sys.path`. Never hand-edit generated files.
 
-`--protos-only` stops after the download; `GADGETBRIDGE_REF=<commit-or-tag>` overrides the
-pin and skips the checksums. Regeneration is byte-identical across reruns (verified); expect
-a harmless "Import xiaomi/wear_common.proto is unused" warning. If upstream adds a `.proto`
-file, add it to the explicit list and its hash in the script.
+Protos are `proto2` on purpose: unset `required` fields make `SerializeToString()` raise, and
+explicit default values must be set to appear on the wire.
 
-Layout matters: generated modules import each other as `from xiaomi import wear_*_pb2`, and
-`src/xiaomi_client.py` puts `src/xiaomi_pb` on `sys.path` then imports `xiaomi_pb2`. Keep the
-generated tree at `src/xiaomi_pb/xiaomi_pb2.py` + `src/xiaomi_pb/xiaomi/*` (namespace
-package, no `__init__.py`). Generated files are never edited by hand.
+## Audio (HFP): the client's exit code proves nothing
 
-Protos are `proto2` on purpose: every `required` field must be set before
-`SerializeToString()` or it raises, and explicit default values must be set to appear on the
-wire.
+Details and measurements: `docs/audio.md`. Rules that must survive a refactor:
 
-## Audio (HFP) — the client's exit code proves nothing
-
-Details and measurements: `docs/audio.md`. The rules that must survive a refactor:
-
-- Verify with the controller counters: `hciconfig hci0` → `sco_tx` must move (~300 packets/s).
-  `paplay` exits 0 in ~0.8 s while sending zero packets.
+- Verify with `hciconfig hci0`: `sco_tx` must move (~300 packets/s). `paplay` exits 0 in ~0.8 s
+  while sending zero packets.
 - Every stream needs a fresh SCO transport (`pactl set-card-profile <card> off`, then
-  `headset-head-unit`); a reused one usually breaks playback.
+  `headset-head-unit`).
 - Never keep a capture stream open while playing on the same watch.
-- The watch tears the SCO link down after ~1.3 s, so `loopback` plays 0.7 s pieces with an
-  audible gap; CVSD fails the same way. Do not "fix" it with buffers or latency.
+- The watch tears SCO down after ~1.3 s, so `loopback` plays 0.7 s pieces with an audible gap;
+  CVSD fails the same way. Do not "fix" it with buffers or latency.
 - Last resort: `systemctl --user restart wireplumber`.
 
-## Provenance / licensing
+## Legal and provenance
 
-AGPL-3.0-or-later; see `LICENSE`. `proto/` is vendored from Gadgetbridge (AGPL-3.0) by
-`fetch_protos.sh` at the commit the script pins, and `src/xiaomi_client.py` is a port of
-Gadgetbridge's Java SPP/auth classes — treat new protocol code as derivative work, not
-original. Unofficial project: not affiliated with Xiaomi.
+Keep language descriptive: "read", "query", "probe", "enumerate". Never write "bypass",
+"unlock", "jailbreak", "crack" or "hack"; this is interoperability with a watch the author owns.
+Never add vendor assets (app, APK, firmware, logos), auth keys, or device identifiers to the
+repo. `README.md`'s Legal section is the canonical disclaimer: link to it, do not restate it.
 
-`DETAILS.md` (Spanish) is the verified device reference: SDP services, protocol ids,
-firmware/serial/battery facts, HFP measurements. Update it when device-level findings are
-confirmed on hardware.
+AGPL-3.0-or-later. `proto/` is vendored from Gadgetbridge and `src/xiaomi_client.py` is a port
+of its Java SPP/auth classes, so treat new protocol code as derivative work. Unofficial project,
+not affiliated with Xiaomi.
