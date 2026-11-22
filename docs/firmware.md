@@ -82,9 +82,28 @@ cluster: `dfu_offline_install[_lite]`, `dfu_offline_header_alloc`, `dfu_img_inst
 `dfu_ota_bootloader_ram_run_set`, `dfu_reboot_install`, `dfu_ctrl_{reset_handler,
 boot_to_user_fw, update_prog_info, error_handle}`, `dfu_protocol_session_close`, `dfu_env`
 (`DFU_CTRL_OTA_MODE`), plus a `dfu_gui_*` on-watch progress screen. FAL/FlashDB are present as
-expected (`fal_init`, `fal_partition_{read,write,erase}`, `fdb_kvdb_init`). The SPP/BLE frame
-dispatcher and `mass`/`channel`/`auth` protocol strings are **not** in this slice — that code
-is elsewhere (likely a separate image part or the LCPU) and needs its own search.
+expected (`fal_init`, `fal_partition_{read,write,erase}`, `fdb_kvdb_init`).
+
+## Package layout, and why the BLE/SPP stack is not here
+
+The file is **two images**, per the top header (`image0_size 0x2e718` + `image1_size
+0x31c4c7` + sub-headers ≈ the 0x34ac87 file):
+
+- **`0x0–~0x30000`** (~192 KB): the HCPU app above, plaintext Thumb (matches the ~222 KB SRAM
+  footprint). This is all we can read.
+- **`~0x30000–EOF`** (~3.26 MB, 93%): image1, dest `0x00552000`, a **chunked** payload
+  (sub-header `[chunk 0x2800][complen][uncomplen]…`) at a **uniform H≈7.98** with a flat byte
+  histogram and no container magic. The HCPU `dfu_decompress` (strings `temp_compress_buf`,
+  `PHAL_OK`; CRC-32 init, no decrypt step) unpacks it with SiFli's **proprietary codec**
+  (`FUN_200051a0`/`FUN_20005060`), so standard inflate/lzma/lz4/zstd all reject it.
+
+The **BLE/SPP protocol — framing, channels, auth, session crypto — is on the LCPU**, not here.
+Evidence: (1) `lcpu2hcpu_notification_callback` — the HCPU only receives BT events over the
+inter-core mailbox; (2) no `spp/rfcomm/l2cap/gatt/ble/mass/xiaomi/nonce` strings and no BT
+`drv.*` device in the whole file; (3) **no AES S-box / SHA-256 / ChaCha constants** in the
+HCPU plaintext, so HKDF/AES-CTR/CCM are not implemented here. The LCPU firmware, if shipped at
+all, is inside the locked image1. So this OTA gives the update/storage/GUI/RTC/DAC side; the
+protocol stays sourced from the APK and live probing.
 
 ## Next: disassembly
 
