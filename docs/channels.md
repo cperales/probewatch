@@ -98,7 +98,7 @@ channel 2, zero on channel 5.
 | Observation | Evidence |
 |---|---|
 | No frame on channel 2 or 5, in any scenario | Idle, keepalive, query matrix, live workout, after the workout |
-| A session dies ~20–26 s after auth, whatever the traffic | Resets at 22.7, 23.0, 25.5 and 25.7 s; a keepalive every 3 s does not extend it |
+| A session dies ~20–26 s after auth, whatever the traffic | Resets at 22.7, 23.0, 25.5 and 25.7 s; a keepalive every 3 s does not extend it. Cause is the LCPU login FSM's 10 s × 2 timeout ([lcpu.md](lcpu.md)) |
 | After a reset the watch answers `EHOSTDOWN` for a few seconds | Immediate reconnect fails with errno 112; a retry ~10 s later connects |
 | The idle heartbeat is `18/0`, once per second | Present in sessions with no traffic, absent while the `8/47` stream runs |
 | Live health data is protobuf on **channel 1**, not channel 5 | `8/45` starts `8/47` `realTimeStats { steps calories heartRate }` every ~1 s; during a workout 74 samples tracked 0→112 bpm |
@@ -106,13 +106,15 @@ channel 2, zero on channel 5.
 | Activity files are never queued, even after saving the workout | `8/2` replies `activityRequestFileIds: ""` before, during and after; also with `activitySyncRequestToday { unknown1: 1 }` |
 | Workout status is a status only | `8/29` → `workoutStatusWatchV2 { status: 0 }`; `8/26`, `8/50`, `8/53` → `status: 1`; `8/30` silent |
 | `8/8`, `8/12`, `8/35`, `2/39` answer | Responses in the matrix capture |
+| Channel 2 `OP_READ` is ACKed but silent | 2026-11-23: 4-byte `Command{0,0}` (`08001000`) with opcode 3 → L1 ACK, no channel-2 DATA, no reset within 4 s |
 
 ### Verdict
 
 Channels 2 and 5 are **not** this firmware's live path: the real-time stream is protobuf on
-channel 1 and a workout adds nothing. The only untested use left is bulk transfer — activity
-files, watchface images, notification icons — and `activityRequestFileIds` is the pointer to
-it. Triggering that needs the phone-side sync sequence (what Mi Fitness sends to make the
+channel 1 and a workout adds nothing. One probe extends the negative result to the read verb:
+`OP_READ` on channel 2 is accepted at L1 and ignored by the application. The only untested use
+left is bulk transfer — activity files, watchface images, notification icons — and
+`activityRequestFileIds` is the pointer to it. Triggering that needs the phone-side sync sequence (what Mi Fitness sends to make the
 watch produce a file id), which a Linux client cannot guess from the protos alone; it would
 need a phone capture to reproduce.
 

@@ -124,8 +124,11 @@ Payloads are built with `text_format.Parse`, so the caller names every field.
 Find-device (no persistent state):
 
 ```
-uv run python src/xiaomi_client.py --send 2 18       # -> status: 0, watch rings
+uv run python src/xiaomi_client.py --send 2 18 --payload 'system { findDevice: 0 }' --listen 8
+# -> status: 0, watch rings; it sends system { findDevice: 1 } when the alert ends
 ```
+
+Keep the link open: a bare `--send 2 18` that disconnected right after `status: 0` did not ring.
 
 DND sync (2/14 get setting 2, 2/15 set). Original `enabled: 0`:
 

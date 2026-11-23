@@ -1,7 +1,8 @@
 # Scripts Reference
 
-All scripts are standalone entrypoints in `src/`, run with `uv run python src/<script>.py`.
-Each has a module docstring describing its purpose, prerequisites, and usage.
+All device-facing scripts are standalone entrypoints in `src/`, run with `uv run python
+src/<script>.py`. Each has a module docstring describing its purpose, prerequisites, and usage.
+Offline tooling lives in `scripts/` ([Firmware tooling](#firmware-tooling-scripts)).
 
 Every script that connects resolves its MAC the same way (`src/watch_secrets.py`): first
 argument, then `$WATCH_MAC`, then the `MAC:` line in the git-ignored `secrets/device.md`.
@@ -103,8 +104,10 @@ The `-v` flag is the first thing to use on protocol failures — it shows every 
 wire.
 
 Channel 6 (OTA) speaks the app's own `0x5A` framing: `--ota-require` sends the read-only
-`REQUIRE` handshake and prints the decoded page size, interval and timeout. See
-[ota.md](ota.md) for the protocol.
+`REQUIRE` handshake and prints the decoded page size, interval and timeout. That is the
+`ota_type = 1` engine; the Redmi Watch 5 Active reports `ota_type = 2` and updates over the
+mass channel, so expect no answer on channel 6. See [ota.md](ota.md) and
+[firmware.md](firmware.md).
 
 ### `src/probe_extra.py`
 
@@ -180,3 +183,31 @@ uv run python src/a2dp_probe.py [MAC]
 ```
 
 Requires: Python with `AF_BLUETOOTH` (system interpreter).
+
+## Firmware tooling
+
+Offline tools under `scripts/`. They never touch the watch.
+
+### `scripts/fetch_firmware_url.py`
+
+Reproduces the app's `latest_ver` request (`POST hlth.io.mi.com/healthapp/device/latest_ver`)
+and prints the JSON reply; `--download` saves the image and checks the server MD5.
+
+```bash
+uv run python scripts/fetch_firmware_url.py --fw-ver 2.2.110 [--download [PATH]]
+```
+
+Needs the `miothealth` account cookie (`cUserId`/`serviceToken`) in
+`secrets/miot_health_cookie.txt`, `--cookie`, or `$MIOT_HEALTH_COOKIE`; without it the server
+answers 401. `--print-curl` shows the equivalent request. See [ota.md](ota.md).
+
+### `scripts/extract_firmware.py`
+
+Unpacks a SiFli `ad ef cd af` package into `secrets/firmware/extracted/{hcpu,lcpu}.bin`,
+verifying the size fields and aborting on mismatch instead of writing a short image.
+
+```bash
+uv run python scripts/extract_firmware.py [IMAGE] [--out DIR]
+```
+
+See [firmware.md](firmware.md) and [lcpu.md](lcpu.md).

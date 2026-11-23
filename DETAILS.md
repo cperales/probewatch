@@ -70,7 +70,7 @@
 | `--send 2 14 --payload 'system { miscSettingGet { setting: 1 } }'` | ✓ — `wakeScreen/onlyWhenPhoneLocked/onlyWhenWorn` |
 | `--send 2 15 --payload 'system { miscSettingSet { dndSync { enabled: 1 } } }'` | ✓ — `status: 0`; lectura posterior `enabled: 1` |
 | `--send 2 15 --payload 'system { miscSettingSet { miscNotificationSettings { wakeScreen: 1 onlyWhenPhoneLocked: 2 onlyWhenWorn: 2 } } }'` | ✓ — `status: 0`; lectura posterior coincide |
-| `--send 2 18` (find-device) | ✓ — `status: 0`, el reloj suena |
+| `--send 2 18 --payload 'system { findDevice: 0 }' --listen 8` (find-device) | ✓ — `status: 0`, el reloj suena; al terminar envía `system { findDevice: 1 }`. Sin payload ni `--listen` (desconexión inmediata) respondió `status: 0` pero no sonó (2026-11-22) |
 | `--send 2 23` / `2 34` (DND) | ✗ — `status: 1` (no implementado) |
 | `--send 2 24` (raiseToWake get) | ✓ — `mode: 2 start 8:00 end 22:00` |
 | `--send 2 25` (raiseToWake set) | ✗ — ACK de transporte, sin respuesta; el valor no cambia |

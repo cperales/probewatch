@@ -19,12 +19,21 @@ The app picks an engine from the server product-catalog key `ota_type` (`Product
 `1` is the newer, watch-driven engine. "HY" is the app's internal name; the APK never prints
 the word "HyperOS", so that association is an inference from the `OTA_CUSTOM_HY` constant.
 
+> **This watch is `ota_type = 2`.** Mi Fitness logs `productDevice = ota_type 2` for `M2351W1`
+> (2026-11-22, `CheckUpdate` tag), so it updates through the general/mass engine. Channel 6 is
+> the `ota_type = 1` protocol and `--ota-require` is not answered by this model; the watch
+> side is in [firmware.md](firmware.md).
+
 ## Version check
 
 Native/Bluetooth watches: read `firmwareVersion` over the SDK, then
-`POST https://hlth.io.mi.com/healthapp/device/latest_ver` (header `locale`), body
-`{"did","model","app_level","fw_ver","platform"}` → `LatestVersion`
-`{version, md5, url, diffUrl, diffMd5, fullPackageUrl, force, isNeedUpdate}`.
+`POST https://hlth.io.mi.com/healthapp/device/latest_ver` (headers `locale` and a `Cookie`),
+body `{"did","model","platform":"android","app_level","fw_ver","channel":"prod"}` →
+`LatestVersion` `{version, md5, url, diffUrl, diffMd5, fullPackageUrl, force, isNeedUpdate}`.
+The endpoint is **authenticated**: `VerifyToken` adds
+`Cookie: cUserId=…; serviceToken=…` for the `miothealth` service, and `ParameterInterceptor`
+appends `locale=…`. Without a logged-in account it answers
+`HTTP 401 {"code":2,"message":"auth err"}`.
 
 Huami devices: `POST …/healthapp/huami/ota` with an `OtaUpgradeRequest`
 (firmware/resource/font/gps flag+version, hardwareVersion, lang,
@@ -41,7 +50,10 @@ show its own "update available" prompt.
 Target file is `Downloads/<model>/<md5>`: the server MD5 is both the filename and the
 integrity check (`MD5Util.getFileMD5(file) == md5`). `diffUrl` is preferred when present.
 `scripts/fetch_firmware_url.py` reproduces the check (read-only) and can download the full
-image with MD5 verification.
+image with MD5 verification; it reads the `miothealth` cookie from
+`secrets/miot_health_cookie.txt` or `--cookie`. Without the app's login, the simpler route
+is to let Mi Fitness download an update and pull the image from
+`/sdcard/Android/data/com.xiaomi.wearable/files/Download/<model>/<md5>`.
 
 ## The HY transfer (channel 6)
 
@@ -100,9 +112,9 @@ reply `{0 ok, 2 already pushed, 3 error, 4 low battery}`, then the SDK mass-chan
 
 ## What this means for ProbeWatch
 
-The ARQ, `CH_OTA` and `OP_READ` are in `src/xiaomi_client.py`, and the `0x5A`/`0A` codec now
-lives there too (`encode_ota_segment` / `parse_ota_segment` / `decode_ota_*`). The read-only
-probe is `--ota-require`: it sends `REQUIRE` on channel 6 and decodes the reply. The hardware
-run that fills in the real page size and timeout is
-[issue #5](https://github.com/cperales/probewatch/issues/5). The flashing path
-(`START`/`DATA`) is deliberately not part of it.
+The ARQ, `CH_OTA` and `OP_READ` are in `src/xiaomi_client.py`, and the `0x5A`/`0A` codec
+lives there too (`encode_ota_segment` / `parse_ota_segment` / `decode_ota_*`), with
+`--ota-require` as the read-only probe. That covers `ota_type = 1`; the Redmi Watch 5 Active
+reports `ota_type = 2`, so for this watch the target is the mass channel (2) plus
+`Command{type=2, subtype=5}` — the watch side is in [firmware.md](firmware.md). The flashing
+path (`START`/`DATA`) is deliberately not part of the client.
