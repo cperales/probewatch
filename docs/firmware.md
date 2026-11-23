@@ -1,8 +1,8 @@
 # Watch firmware — what the 2.2.111 image is
 
 The image the watch runs, and what it says about the device. This page is static: the image
-was downloaded and string-scanned only; nothing was flashed or executed and the watch is not
-contacted. Legal framing is [README.md](../README.md#legal).
+was downloaded, unpacked and disassembled locally; nothing was flashed or executed and the
+watch is not contacted. Legal framing is [README.md](../README.md#legal).
 
 ## Provenance
 
@@ -24,10 +24,10 @@ be `adb pull`ed. `scripts/fetch_firmware_url.py` is the direct-API route, which 
 
 ## What it is
 
-Not Linux. It is a monolithic **RT-Thread** image for a **SiFli** part in the
-**SF32LB5x / Cortex-M33** family (the image carries `m33` and Thumb-2 code; the exact SKU is
-not confirmed). Layout: a small SiFli boot header (`ad ef cd af`), then the RT-Thread
-application and its string/rodata.
+Not Linux. It is a **SiFli** package for an **SF32LB5x** part: a small `ad ef cd af` header,
+then two **Cortex-M33** images. The part is dual-core — the **HCPU** runs the RT-Thread
+application/GUI, the **LCPU** runs the low-power and Bluetooth stack. The exact SKU is not
+confirmed.
 
 | Evidence in the image | Layer |
 |---|---|
@@ -38,11 +38,35 @@ application and its string/rodata.
 | `FlashDB V%s`, `[FlashDB][kv]` | armink FlashDB key/value store |
 | `dfu_image_install_flash_lite`, `dfu_packet_erase_flash dest 0x%x`, `dfu_ota_bootloader_ram_run_set`, `dfu_reboot_install` | DFU/OTA installer |
 | `app_watch`, `battery_charger_init ok!`, `dac`, `RTC use LXT`, `Init RTC, wake = %d` | app, power, audio, alarms |
+| `spp_connect`, `rfcomm chl = 0x%x`, `l2cap`, `gatt`, `miwear_mass_*`, `hkdf_sha256.c` | LCPU Bluetooth/SPP stack |
 
-The strings are readable, so string-guided analysis works; the image also carries
-decompression helpers (a few regions may be packed). The `dfu_*` + `FAL` names say the
-watch-side update path is: receive a file, erase the target partition, write it, reboot into
-the bootloader. That is the counterpart of the app's file push.
+## The package is two images
+
+The `0xa8`-byte header is followed by `image0` and the `image1` record stream; the three tile
+the file exactly (`0xa8 + 0x2e718 + 0x31c4c7 = 3,452,039 B`):
+
+| Field (u32 LE) | Offset | Value | Meaning |
+|---|---|---|---|
+| image0 size | `0x0c` | `0x2e718` (190,232 B) | plaintext HCPU image |
+| image1 stored | `0x1c` | `0x31c4c7` (3,261,639 B) | record stream as shipped |
+| image1 total | `0x20` | `0x552000` (5,578,752 B) | uncompressed LCPU image |
+
+- **image0** starts at `0xa8` and runs from SRAM at **`0x20000000`** (initial `SP = 0x20036970`,
+  reset `0x20000909`). This is the RT-Thread/SiFli app mapped in the load map below.
+- **image1** starts at `0xa8 + 0x2e718 = 0x2e7c0`: a **raw-DEFLATE** record stream. It unpacks
+  to 545 blocks of `0x2800` B (final block `0x2000` B), and its vectors point into
+  `0x1202xxxx` — the image is linked at **`0x12000000`** (initial `SP = 0x200577c0`, reset
+  `0x12029749`). The `0x552000` field is an uncompressed **length** (used as the erase extent
+  and checked by `dfu_decompress`), not a load address.
+
+The stream opens with `[total][block=0x2800][first complen][first uncomplen]`; each record is a
+self-terminating DEFLATE stream expanding to one block, some prefixed with
+`[complen][uncomplen]` and some with `[uncomplen]` only. Declared lengths include a 4-byte
+encoder pad, which the final record truncates. The HCPU `dfu_decompress` is a zlib-style
+inflate wrapper (CRC-32 seeded `0xffffffff`, `total_uncompress_len > …pksize` check); it has
+no decrypt step. `scripts/extract_firmware.py` reproduces the walk (`uv run python
+scripts/extract_firmware.py` writes `secrets/firmware/extracted/{hcpu,lcpu}.bin`) and aborts
+unless the blocks sum to exactly `0x552000` B.
 
 ## Which OTA engine this model uses
 
@@ -54,27 +78,22 @@ completeness; `--ota-require` is not answered by this watch.
 
 ## Sound and alarms
 
-Both live in this image, not in the app:
+Both live in the HCPU image:
 
 - **Audio**: the SiFli `dac` driver path (tone/beep), not an I²S codec; the app's HFP audio is
   a separate Bluetooth profile (see [audio.md](audio.md)).
 - **Alarms**: `rt_rtc_control`, `drv.rtc`, `RTC use LXT`, `Init RTC, wake = %d` — an RTC
   compare/wake path on the LXT crystal.
 
-## Load map (verified)
+## Load map (HCPU, verified)
 
-The image is a `ad ef cd af` SiFli container: a **0xa8-byte header**, then a Cortex-M image
-that runs from SRAM at **`0x20000000`**. So disassembly uses **file offset `0xa8` ↔ vaddr
-`0x20000000`** (carve `image[0xa8:]`, load base `0x20000000`, ARM little-endian, Thumb).
-
-The vector table is at the start of that image (file `0xa8`): initial `SP = 0x20036970`
-(top of a ~222 KB window), `reset = 0x20000909` (file `0x9b0`; prologue sets MSP then branches).
+The HCPU image runs from SRAM at **`0x20000000`**: file offset `0xa8` ↔ vaddr `0x20000000`
+(carve `image[0xa8:]`, load base `0x20000000`, ARM little-endian, Thumb). The vector table is
+at the image start (`SP = 0x20036970`, reset `0x20000909`; prologue sets MSP then branches).
 Auto-analysis (Ghidra via REA, generic `ARM:LE:32:v7` — no Cortex-M profile, but the odd
 Thumb vectors seed it) finds **929 procedures / 795 strings**. Function names are not in the
 image, but RT-Thread logs its own `__func__`: the bare `name` literal is referenced only from
-inside the function that bears it, so an xref to it names the function. Example verified:
-`dfu_image_install_flash_lite` (literal `0x2002d0d4`) is referenced from 7 sites in
-`0x20011800–0x20011c3e` — that span is the installer body.
+inside the function that bears it, so an xref to it names the function.
 
 The DFU/OTA installer (the watch side of the `ota_type = 2` update) is the densest named
 cluster: `dfu_offline_install[_lite]`, `dfu_offline_header_alloc`, `dfu_img_install[_flash]`,
@@ -84,31 +103,24 @@ boot_to_user_fw, update_prog_info, error_handle}`, `dfu_protocol_session_close`,
 (`DFU_CTRL_OTA_MODE`), plus a `dfu_gui_*` on-watch progress screen. FAL/FlashDB are present as
 expected (`fal_init`, `fal_partition_{read,write,erase}`, `fdb_kvdb_init`).
 
-## Package layout, and why the BLE/SPP stack is not here
+## The BLE/SPP stack lives on the LCPU
 
-The file is **two images**, per the top header (`image0_size 0x2e718` + `image1_size
-0x31c4c7` + sub-headers ≈ the 0x34ac87 file):
+The HCPU has **no** protocol code: `mass`, `spp`, `rfcomm` and `aes` appear nowhere in it (the
+only `proto` hit is `dfu_protocol_session_close`), and it exposes
+`lcpu2hcpu_notification_callback` — it receives Bluetooth events over the inter-core mailbox.
+The extracted LCPU image holds the stack: `spp_connect`, `rfcomm chl = 0x%x`,
+`send l2cap sig %x`, `gatt`, `bredr`, `ble_*`, `hkdf_sha256.c`, `zh_sha256.c`,
+`protobuf_preprocess_queue`, the `miwear_mass_*` receiver and the channel enable/disable
+logic. So the firmware is the **watch side** of the protocol, the APK in
+[apk-analysis.md](apk-analysis.md) is the **phone side**, and live probing arbitrates. What
+the LCPU contains, and the one probe run so far, is in [lcpu.md](lcpu.md).
 
-- **`0x0–~0x30000`** (~192 KB): the HCPU app above, plaintext Thumb (matches the ~222 KB SRAM
-  footprint). This is all we can read.
-- **`~0x30000–EOF`** (~3.26 MB, 93%): image1, dest `0x00552000`, a **chunked** payload
-  (sub-header `[chunk 0x2800][complen][uncomplen]…`) at a **uniform H≈7.98** with a flat byte
-  histogram and no container magic. The HCPU `dfu_decompress` (strings `temp_compress_buf`,
-  `PHAL_OK`; CRC-32 init, no decrypt step) unpacks it with SiFli's **proprietary codec**
-  (`FUN_200051a0`/`FUN_20005060`), so standard inflate/lzma/lz4/zstd all reject it.
+## Next
 
-The **BLE/SPP protocol — framing, channels, auth, session crypto — is on the LCPU**, not here.
-Evidence: (1) `lcpu2hcpu_notification_callback` — the HCPU only receives BT events over the
-inter-core mailbox; (2) no `spp/rfcomm/l2cap/gatt/ble/mass/xiaomi/nonce` strings and no BT
-`drv.*` device in the whole file; (3) **no AES S-box / SHA-256 / ChaCha constants** in the
-HCPU plaintext, so HKDF/AES-CTR/CCM are not implemented here. The LCPU firmware, if shipped at
-all, is inside the locked image1. So this OTA gives the update/storage/GUI/RTC/DAC side; the
-protocol stays sourced from the APK and live probing.
-
-## Next: disassembly
-
-1. RT-Thread and the SiFli SDK are open source: diff the recovered code against them to name
-   the scheduler, drivers, FAL/FlashDB and DFU routines.
-2. Then the pieces this repo cares about: the SPP/BLE frame dispatcher, the mass-file/DFU
-   handler (start from the `dfu_offline_install` / `dfu_image_install_flash_lite` cluster), the
-   DAC/audio path and the RTC/alarm scheduler (`rt_rtc_control`, `Init RTC, wake = %d`).
+1. LCPU mining, string-guided (started in [lcpu.md](lcpu.md)): the mass-channel receiver (feeds
+   the `ota_type = 2` push in [ota.md](ota.md)), the channel table and the session teardown
+   (feeds [channels.md](channels.md)), the protobuf dispatch, and HKDF/AES against
+   `src/xiaomi_client.py`.
+2. HCPU: diff the plaintext app against open-source RT-Thread to name the scheduler, drivers,
+   FAL/FlashDB and DFU routines; the installer cluster is already located.
+3. Verify anything claimed on hardware; update `DETAILS.md` only with measured facts.

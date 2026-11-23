@@ -13,12 +13,13 @@ short contract. `make sizes` tracks their cost (~3.8 bytes/token).
 | [channels.md](channels.md) | 5 KB | Channels 2 and 5: capture method, trigger matrix, analysis |
 | [apk-analysis.md](apk-analysis.md) | 7 KB | Official app: provenance, L1 ARQ, full channel table, crypto |
 | [ota.md](ota.md) | 5 KB | Official app's firmware update: version check, download, channel-6 protocol |
-| [firmware.md](firmware.md) | 4 KB | The watch image: RT-Thread/SiFli, DFU, `ota_type`, sound/alarms |
+| [firmware.md](firmware.md) | 7 KB | The watch package: two images (HCPU/LCPU), unpacking, DFU, `ota_type` |
+| [lcpu.md](lcpu.md) | 5 KB | LCPU firmware: SPP/protobuf/mass code, load map, one probe |
 | [audio.md](audio.md) | 5 KB | HFP audio, SCO quirks, verification, workarounds |
 
 ## Quick links
 
 - **Getting started**: [setup.md](setup.md) → [scripts.md](scripts.md)
-- **Understanding the protocol**: [protocol.md](protocol.md) → [architecture.md](architecture.md) → [apk-analysis.md](apk-analysis.md) → [ota.md](ota.md) → [firmware.md](firmware.md)
+- **Understanding the protocol**: [protocol.md](protocol.md) → [architecture.md](architecture.md) → [apk-analysis.md](apk-analysis.md) → [ota.md](ota.md) → [firmware.md](firmware.md) → [lcpu.md](lcpu.md)
 - **Audio troubleshooting**: [audio.md](audio.md)
 - **Device reference** (Spanish): [DETAILS.md](../DETAILS.md)
