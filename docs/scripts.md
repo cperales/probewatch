@@ -1,7 +1,8 @@
 # Scripts Reference
 
-All scripts are standalone entrypoints in `src/`, run with `uv run python src/<script>.py`.
-Each has a module docstring describing its purpose, prerequisites, and usage.
+All device-facing scripts are standalone entrypoints in `src/`, run with `uv run python
+src/<script>.py`. Each has a module docstring describing its purpose, prerequisites, and usage.
+Offline tooling lives in `scripts/` ([Firmware tooling](#firmware-tooling-scripts)).
 
 Every script that connects resolves its MAC the same way (`src/watch_secrets.py`): first
 argument, then `$WATCH_MAC`, then the `MAC:` line in the git-ignored `secrets/device.md`.
@@ -182,3 +183,31 @@ uv run python src/a2dp_probe.py [MAC]
 ```
 
 Requires: Python with `AF_BLUETOOTH` (system interpreter).
+
+## Firmware tooling
+
+Offline tools under `scripts/`. They never touch the watch.
+
+### `scripts/fetch_firmware_url.py`
+
+Reproduces the app's `latest_ver` request (`POST hlth.io.mi.com/healthapp/device/latest_ver`)
+and prints the JSON reply; `--download` saves the image and checks the server MD5.
+
+```bash
+uv run python scripts/fetch_firmware_url.py --fw-ver 2.2.110 [--download [PATH]]
+```
+
+Needs the `miothealth` account cookie (`cUserId`/`serviceToken`) in
+`secrets/miot_health_cookie.txt`, `--cookie`, or `$MIOT_HEALTH_COOKIE`; without it the server
+answers 401. `--print-curl` shows the equivalent request. See [ota.md](ota.md).
+
+### `scripts/extract_firmware.py`
+
+Unpacks a SiFli `ad ef cd af` package into `secrets/firmware/extracted/{hcpu,lcpu}.bin`,
+verifying the size fields and aborting on mismatch instead of writing a short image.
+
+```bash
+uv run python scripts/extract_firmware.py [IMAGE] [--out DIR]
+```
+
+See [firmware.md](firmware.md) and [lcpu.md](lcpu.md).
