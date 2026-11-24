@@ -48,9 +48,16 @@ def test_unlisted_and_missing_pages(tmp_path: Path) -> None:
     ]
 
 
-def test_dead_link(tmp_path: Path) -> None:
-    root = _repo(tmp_path, {"a.md": "[x](nope.md) [y](a.md#top) [z](https://e.org)"}, {"a.md": 0})
-    assert dead_links(root) == ["dead link: docs/a.md: nope.md"]
+def test_dead_link_and_anchor(tmp_path: Path) -> None:
+    text = "# Top\n\n## Connection & pairing\n\n```\n# Not a heading\n```\n"
+    links = "[x](nope.md) [y](a.md#top) [z](https://e.org) [w](#connection--pairing) "
+    links += "[v](#not-a-heading) [u](a.md#gone)"
+    root = _repo(tmp_path, {"a.md": text + links}, {"a.md": 0})
+    assert dead_links(root) == [
+        "dead link: docs/a.md: nope.md",
+        "dead anchor: docs/a.md: #not-a-heading",
+        "dead anchor: docs/a.md: a.md#gone",
+    ]
 
 
 def test_banned_words_and_exceptions(tmp_path: Path) -> None:
@@ -68,7 +75,7 @@ def test_readme_legal_section_is_skipped(tmp_path: Path) -> None:
 
 
 def test_source_tags(tmp_path: Path) -> None:
-    good = "[hw 2.2.111 2026-11-24] [apk 9.8.348i] [fw 2.2.111] [gb] [inferred]"
+    good = "[hw 2.2.111 2026-11-24] [hw ? 2026-11-22] [apk 9.8.348i] [fw 2.2.111] [gb] [inferred]"
     bad = "[hw 2026-11-24] [apk] [gb 1.0.0]"
     links = "[apk-analysis.md](apk-analysis.md) [hw](a.md)"
     root = _repo(tmp_path, {"a.md": f"{good}\n{bad}\n{links}\n"}, {"a.md": 0})

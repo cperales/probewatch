@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lint the Markdown docs: links, the docs index, banned words and source tags.
+"""Lint the Markdown docs: links and anchors, the docs index, banned words and source tags.
 
 Agents and humans navigate this repository by link and by the index in docs/README.md,
 so a dead path or a stale index row is a broken harness. Read-only unless `--fix` is given,
@@ -15,7 +15,8 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LINK = re.compile(r"\]\(([^)]+)\)")
-SKIP_PREFIXES = ("http://", "https://", "#", "mailto:")
+HEADING = re.compile(r"^#+ (.*)$", re.MULTILINE)
+FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
 
 # `| [page.md](page.md) | 7 KB | ...` rows of docs/README.md; sizes are round(bytes / 1024).
 INDEX_ROW = re.compile(r"^(\| \[([\w.-]+\.md)\]\(\2\) \| )(\d+)( KB \|)", re.MULTILINE)
@@ -31,7 +32,7 @@ BANNED_SKIP_SECTION = ("README.md", "## Legal")
 TAG = re.compile(r"\[(hw|apk|fw|gb|inferred)((?: [^\]]*)?)\](?!\()")
 VERSION = r"\d+\.\d+\.\d+"
 TAG_ARGS = {
-    "hw": re.compile(rf" {VERSION} \d{{4}}-\d{{2}}-\d{{2}}"),
+    "hw": re.compile(rf" (?:{VERSION}|\?) \d{{4}}-\d{{2}}-\d{{2}}"),  # ? = not recorded
     "apk": re.compile(rf" {VERSION}\w*"),
     "fw": re.compile(rf" {VERSION}"),
     "gb": re.compile(""),
@@ -43,17 +44,30 @@ def link_files(root: pathlib.Path) -> list[pathlib.Path]:
     return [root / "README.md", root / "AGENTS.md", *sorted((root / "docs").glob("*.md"))]
 
 
+def slug(heading: str) -> str:
+    """GitHub's heading anchor: lowercase, punctuation dropped, spaces to hyphens."""
+    return re.sub(r"[^\w\- ]", "", heading.strip().lower()).replace(" ", "-")
+
+
+def anchors(doc: pathlib.Path) -> set[str]:
+    text = FENCE.sub("", doc.read_text())
+    return {slug(h) for h in HEADING.findall(text)}
+
+
 def dead_links(root: pathlib.Path) -> list[str]:
     bad = []
     for doc in link_files(root):
         if not doc.exists():
             continue
         for target in LINK.findall(doc.read_text()):
-            if target.startswith(SKIP_PREFIXES):
+            if target.startswith(("http://", "https://", "mailto:")):
                 continue
-            path_part = target.split("#", 1)[0]  # ignore in-page anchors
-            if path_part and not (doc.parent / path_part).resolve().exists():
+            path_part, _, fragment = target.partition("#")
+            dest = (doc.parent / path_part).resolve() if path_part else doc
+            if not dest.exists():
                 bad.append(f"dead link: {doc.relative_to(root)}: {target}")
+            elif fragment and dest.suffix == ".md" and fragment not in anchors(dest):
+                bad.append(f"dead anchor: {doc.relative_to(root)}: {target}")
     return bad
 
 

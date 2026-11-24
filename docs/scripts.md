@@ -2,7 +2,7 @@
 
 All device-facing scripts are standalone entrypoints in `src/`, run with `uv run python
 src/<script>.py`. Each has a module docstring describing its purpose, prerequisites, and usage.
-Offline tooling lives in `scripts/` ([Firmware tooling](#firmware-tooling-scripts)).
+Offline tooling lives in `scripts/` ([Firmware tooling](#firmware-tooling)).
 
 Every script that connects resolves its MAC the same way (`src/watch_secrets.py`): first
 argument, then `$WATCH_MAC`, then the `MAC:` line in the git-ignored `secrets/device.md`.
