@@ -4,6 +4,8 @@ The audio subsystem uses Bluetooth Classic's Hands-Free Profile (HFP) to stream 
 between the PC and the watch. The watch acts as the Hands-Free (HF) unit and the PC as
 the Audio Gateway (AG).
 
+Source: [hw 2.2.110 2026-11-16], measured with `src/audio_test.py`, unless tagged.
+
 ## Profile and codec
 
 | Parameter | Value |
@@ -51,7 +53,7 @@ This worked 6/6 times in testing. Reusing a transport usually fails.
 If a capture stream (`parecord`) is open while playing:
 
 - The single SCO link goes entirely to the capture
-- Playback sends **zero packets** even though `paplay` exits 0
+- Playback sends **zero packets** even though `paplay` exits 0 (0/4 and 0/3 attempts)
 - The watch receives nothing
 
 **Fix**: Never keep a capture stream open while playing. `loopback` mode records first,
@@ -69,7 +71,9 @@ hciconfig hci0
 ```
 
 If the TX counter does not move, **no audio reached the watch**. Measured rates are
-roughly 300 packets/s (215-248 packets for a 0.75 s clip).
+roughly 300 packets/s (215-248 packets for a 0.75 s clip). If the link drops mid-clip the
+counter stops short (e.g. 140 of ~230) and WirePlumber logs `Failure in Bluetooth audio
+transport`.
 
 ## Playback window limit
 
@@ -80,10 +84,15 @@ visible in `hcitool con` — the SCO entry disappears while the client is still 
 |---|---|
 | ≤ 0.75 s | Plays in one piece (215-248 packets) |
 | 0.75–1.3 s | May work in one piece |
-| > 1.3 s | Fails at ~1.3 s (counter stops short, e.g. 140 of ~380) |
+| > 1.3 s | Fails at ~1.3 s (≈380 packets); 2, 3 and 5 s clips always fail there |
 
 **Workaround**: Split longer clips into 0.7 s pieces, each on a fresh transport. This
 leaves an audible gap between pieces that cannot be avoided.
+
+Not the cause: the codec (CVSD fails like mSBC), client buffering (`PULSE_LATENCY_MSEC`
+10/20/50/100 and `pw-cat --latency` 20/50 ms fail the same way) and the client (`pw-play`
+behaves like `paplay`, so it is not the PulseAudio shim). Calls from the phone are reliable:
+during a call the SCO link is already up.
 
 ## Capture behavior
 
@@ -97,6 +106,8 @@ Capture does **not** have the 1.3 s limit. Recorded captures of 4 s work fine.
 | Dead link = silence | `parecord` writes digital silence and exits 0 (no error) |
 | All-zero detection | `record()` retries when the take is all zeros |
 | Echo cancellation | Watch mic does not pick up its own speaker (can't verify playback this way) |
+| Mic level | Works when the link is up: peak 26–71 % with music playing nearby |
+| Fresh transport | With the profile re-created first, 4/4 takes had signal |
 
 ### Recording parameters
 
@@ -146,4 +157,4 @@ Linux. The SCO transport implementation does not handle state transitions cleanl
 3. The watch enforces a hard 1.3 s limit on continuous playback
 
 The workarounds in `audio_test.py` are practical fixes, not protocol-level solutions.
-The underlying issue requires changes to BlueZ or WirePlumber firmware.
+Fixing the cause needs changes in BlueZ/WirePlumber or in the watch firmware.

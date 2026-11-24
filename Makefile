@@ -15,8 +15,9 @@ protos: ## Download proto/ and regenerate src/xiaomi_pb/ (pinned, checksummed)
 fmt: ## Apply ruff formatting and safe lint fixes
 	uv run ruff format .
 	uv run ruff check --fix .
+	uv run python scripts/check_docs.py --fix
 
-lint: ## Static checks: ruff, shell syntax, doc links
+lint: ## Static checks: ruff, shell syntax, docs lint
 	uv run ruff check .
 	uv run ruff format --check .
 	bash -n fetch_protos.sh

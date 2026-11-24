@@ -9,18 +9,19 @@ identifiers are not in the repository; they live in the git-ignored `secrets/` d
 
 ProbeWatch is a personal, unofficial hobby project: reverse engineering done on a watch I own, to
 use it from Linux in the spirit of [Gadgetbridge](https://codeberg.org/Freeyourgadget/Gadgetbridge).
-It reads state and talks to the device; it does not unlock or modify it.
+It reads state and talks to the device; it does not modify its firmware.
 
-The repository is its own agent harness: `make check` (ruff, doc-link check, pytest, a
+The repository is its own agent harness: `make check` (ruff, a docs lint, pytest, a
 context-size budget, `compileall`) needs no watch and is exactly what CI runs. Hardware
 behaviour still has to be verified by running a script against the watch.
 
 ## Documentation
 
-`docs/` holds the long-form docs: [index](docs/README.md), [overview](docs/overview.md),
-[setup](docs/setup.md), [scripts reference](docs/scripts.md),
-[architecture](docs/architecture.md), [protocol spec](docs/protocol.md), and
-[audio notes](docs/audio.md).
+`docs/` holds the long-form docs, one topic per page; start at the [index](docs/README.md).
+Common entry points: [setup](docs/setup.md), [scripts reference](docs/scripts.md),
+[the watch](docs/device.md), [protocol](docs/protocol.md) and [audio notes](docs/audio.md).
+Each fact is written once, on its topic page, tagged with where it comes from (hardware run,
+app, firmware or Gadgetbridge).
 
 ## Prerequisites
 
@@ -118,35 +119,17 @@ uv run python src/audio_test.py loopback -s 5
 
 ## `src/xiaomi_client.py` architecture
 
-One file, layered; each layer is used only by the one above:
-
-1. **Rfcomm** — RFCOMM socket opened via `ctypes`/libc; `fill()` appends to `link.buf`, and
-   every parser below consumes from its front.
-2. **SPP v1** (`parse_v1`, `V1_VERSION_REQUEST`) — only the `BA DC FE … EF` version probe;
-   aborts unless the watch reports v2.
-3. **SPP v2 framing** (`encode_v2`/`parse_v2`) — `A5 A5`, type/seq/len, CRC-16/ARC; frame
-   types NACK/ACK/SESSION/DATA; DATA payloads start with `[channel, opcode]` (1 = plain,
-   2 = encrypted). `SESSION_START` is a byte blob captured from the official app.
-4. **Session** — HKDF(phone nonce ‖ watch nonce) → 64 B split into dec key / enc key /
-   dec nonce / enc nonce; normal traffic is AES-CTR with the key as IV, per message.
-5. **XiaomiWatch** — `connect()` runs RFCOMM → version probe → session → 3 auth steps;
-   `_pump()` ACKs every DATA frame, decrypts, and queues `xiaomi_pb2.Command` objects in
-   `inbox`; `wait_for(type, subtype)` pops a matching command, `request(t, s)` = send empty
-   command + wait.
+One file in five layers: RFCOMM socket → SPP v1 version probe → SPP v2 framing and ARQ →
+session crypto (HKDF keys, AES-CTR) → `XiaomiWatch` (connect, auth, commands). The code is
+described in [docs/architecture.md](docs/architecture.md); the protocol in
+[docs/protocol.md](docs/protocol.md), [docs/session.md](docs/session.md) and
+[docs/arq.md](docs/arq.md).
 
 ## Audio (HFP) notes
 
-- **Verify with controller counters**: `hciconfig hci0` → `sco_tx` must move (roughly
-  300 packets/s). `paplay` exits 0 in ~0.8 s while sending **0** packets, and `parecord`
-  writes digital silence and exits 0 — neither return code nor duration alone is proof.
-- Every stream needs a **fresh SCO transport**: `pactl set-card-profile <card> off`, then
-  `headset-head-unit`, with the existing waits.
-- Never keep a capture stream open while playing on the same watch — the single SCO link
-  goes to the capture and playback sends nothing.
-- Capture loses ~1 s at the start (SCO setup), hence `record()` recording `seconds + LINK_SETTLE`
-  and retrying when a take is all zeros.
-- The watch tears the SCO link down after **~1.3 s** of continuous playback, so longer clips
-  are played in 0.7 s pieces with an audible gap.
+The exit code of `paplay`/`parecord` proves nothing: check that `sco_tx` moves in
+`hciconfig hci0`, re-create the SCO transport for every stream, and expect the watch to drop
+playback after ~1.3 s. Measurements and workarounds: [docs/audio.md](docs/audio.md).
 
 ## Protobuf bindings (`proto/`, `src/xiaomi_pb/`)
 
@@ -198,5 +181,6 @@ breach Mi Fitness terms of service; you are responsible for what you do with you
 
 ## Reference
 
-- `DETAILS.md` — Spanish-language device/protocol reference with verified SDP service table,
-  SPP session parameters, protocol IDs, firmware/serial/battery facts, and HFP measurements.
+- [`docs/device.md`](docs/device.md) — the watch: identity, firmware history, Bluetooth identity
+  and SDP services. Hardware results live on their topic pages, indexed in
+  [`docs/README.md`](docs/README.md).

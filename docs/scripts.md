@@ -2,7 +2,7 @@
 
 All device-facing scripts are standalone entrypoints in `src/`, run with `uv run python
 src/<script>.py`. Each has a module docstring describing its purpose, prerequisites, and usage.
-Offline tooling lives in `scripts/` ([Firmware tooling](#firmware-tooling-scripts)).
+Offline tooling lives in `scripts/` ([Firmware tooling](#firmware-tooling)).
 
 Every script that connects resolves its MAC the same way (`src/watch_secrets.py`): first
 argument, then `$WATCH_MAC`, then the `MAC:` line in the git-ignored `secrets/device.md`.
@@ -95,7 +95,7 @@ uv run python src/xiaomi_client.py [MAC] [--channel 1] [--key-file PATH] [-v]
 Without `--send`, `--ota-require` or `--listen` it only connects and authenticates; nothing
 is queried by default. A basic read is
 `--send 2 2 --send 2 1` (device info, battery). The id catalogue is in
-[commands.md](commands.md).
+[commands.md](commands.md), and what the watch answered in [commands-tested.md](commands-tested.md).
 
 The `-v` flag is the first thing to use on protocol failures — it shows every frame on the
 wire.

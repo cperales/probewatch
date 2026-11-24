@@ -20,7 +20,6 @@ BYTES_PER_TOKEN = 3.8
 GROUPS = [
     (["AGENTS.md"], "agent contract", "always"),
     (["README.md", "CLAUDE.md"], "entry docs", "once"),
-    (["DETAILS.md"], "device reference", "when device facts are needed"),
     (["docs/*.md"], "long-form docs", "on demand"),
     (["src/*.py"], "scripts", "the file you change"),
     (["tests/*.py"], "tests", "the test you are fixing"),

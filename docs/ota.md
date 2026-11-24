@@ -5,6 +5,8 @@ Everything here is **static** (no APK executed, no watch involved): transport fa
 cross-checked with [apk-analysis.md](apk-analysis.md) and [protocol.md](protocol.md). Legal
 framing is [README.md](../README.md#legal).
 
+Source: [apk 9.8.348i] unless tagged.
+
 ## The two OTA engines
 
 The app picks an engine from the server product-catalog key `ota_type` (`Product.ota` →
@@ -21,8 +23,8 @@ the word "HyperOS", so that association is an inference from the `OTA_CUSTOM_HY`
 
 > **This watch is `ota_type = 2`.** Mi Fitness logs `productDevice = ota_type 2` for `M2351W1`
 > (2026-11-22, `CheckUpdate` tag), so it updates through the general/mass engine. Channel 6 is
-> the `ota_type = 1` protocol and `--ota-require` is not answered by this model; the watch
-> side is in [firmware.md](firmware.md).
+> the `ota_type = 1` protocol, so this watch is not expected to answer `--ota-require`
+> [inferred]; the watch side is in [firmware.md](firmware.md).
 
 ## Version check
 

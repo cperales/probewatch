@@ -1,14 +1,18 @@
-# Command ids — system, settings, notifications, health
+# Command ids — system, settings, watchfaces
 
 The `(type, subtype)` catalogue for L2 channel 1, **read out of the official app**
-(Mi Fitness 9.8.348i, `secrets/apk/`; provenance in [apk-analysis.md](apk-analysis.md)).
-Each pair is a literal assignment in app code, found with `trace_android_references` on the
-command envelope and read from the decompiled method.
+(provenance in [apk-analysis.md](apk-analysis.md)). Each pair is a literal assignment in app
+code, found with `trace_android_references` on the command envelope and read from the
+decompiled method.
 
-A **✓** marks ids ProbeWatch has already confirmed on the watch (`DETAILS.md`); **✗** marks ids
-the watch rejects. Everything else is "read from the app" and still needs a hardware check.
+Source: [apk 9.8.348i] unless tagged.
 
-Internal, bind, NFC, media, OTA and debug ids are in [commands-internal.md](commands-internal.md).
+A **✓** in the Watch column marks ids the watch answered or acted on and **✗** ids it rejects;
+results, firmware and dates are in [commands-tested.md](commands-tested.md). Unmarked ids are
+"read from the app" unless that page records a probe.
+
+Notifications, health, alarms and contacts are in [commands-health.md](commands-health.md);
+internal, bind, NFC, media, OTA and debug ids in [commands-internal.md](commands-internal.md).
 
 ## How the app encodes a command
 
@@ -37,7 +41,7 @@ helpers.
 
 ## Type 2 — device, settings, system
 
-| id | Meaning | ✓ |
+| id | Meaning | Watch |
 |---|---|---|
 | 2/0 | unbind / remove device | |
 | 2/1 | battery status (read) | ✓ |
@@ -61,7 +65,7 @@ helpers.
 | 2/20 | authorize-unlock set | |
 | 2/21 | un-wear password set | |
 | 2/22 | quiet mode get (Alexa) | |
-| 2/23 | quiet mode set (Alexa); `DETAILS.md` also reads this as DND and gets `status: 1` | ✗ |
+| 2/23 | quiet mode set (Alexa); the DND test used it and got `status: 1` | ✗ |
 | 2/24 | raise-to-wake get | ✓ |
 | 2/25 | raise-to-wake set | ✗ |
 | 2/27 | direct-card widget set | |
@@ -90,13 +94,13 @@ helpers.
 | 2/79 | device state | ✗ |
 | 2/80 | device log pull / upload URL | |
 
-`2/34` (DND) was not found among the construction sites; `DETAILS.md` records it as
-unimplemented. Several ids are reused (2/9, 2/14, 2/15, 2/18, 2/67): the payload selects the
+`2/34` (DND) was not found among the construction sites; the watch answers it with
+`status: 1`. Several ids are reused (2/9, 2/14, 2/15, 2/18, 2/67): the payload selects the
 operation.
 
 ## Type 4 — watchfaces
 
-| id | Meaning | ✓ |
+| id | Meaning | Watch |
 |---|---|---|
 | 4/0 | watchface list | ✓ |
 | 4/1 | set active watchface | ✓ |
@@ -106,114 +110,6 @@ operation.
 | 4/6 | delete unavailable faces by group | |
 | 4/10 | face data list | |
 | 4/11 | edit/request face layout | |
-
-## Type 7 — notifications and calls
-
-| id | Meaning | ✓ |
-|---|---|---|
-| 7/0 | add notification | |
-| 7/1 | remove notification; missed call | |
-| 7/6 | auto-screen-on get | |
-| 7/7 | auto-screen-on set | |
-| 7/9 | SMS list get | |
-| 7/11 | SMS delete | |
-| 7/12 | SMS list sync | |
-| 7/14 | SMS send result | |
-| 7/15 | app icon push (prepare) | |
-
-## Type 8 — health, sport, files
-
-| id | Meaning | ✓ |
-|---|---|---|
-| 8/0 | user info sync (height, weight, goals…) | |
-| 8/1 | today's fitness file ids | |
-| 8/2 | history fitness file ids | ✓ |
-| 8/3 | request fitness file ids | |
-| 8/4 | confirm fitness id | |
-| 8/5 | confirm fitness id (fitness-file path) | |
-| 8/6 | sport report list; gym offline report | |
-| 8/8 | SpO₂ config get | ✓ |
-| 8/9 | SpO₂ config set | |
-| 8/10 | heart-rate config get; sleep-assist get | |
-| 8/11 | heart-rate config set; sleep-assist set | |
-| 8/12 | standing reminder get | ✓ |
-| 8/13 | standing reminder set | |
-| 8/14 | pressure monitoring get | |
-| 8/15 | pressure monitoring set | |
-| 8/17 | blood-pressure reminder | |
-| 8/18 | ECG reminder get | |
-| 8/19 | ECG reminder set | |
-| 8/20 | "curse" (habit) prediction record | |
-| 8/21 | vitality reminder get | |
-| 8/22 | vitality reminder set | |
-| 8/29 | sport status | ✓ |
-| 8/30 | phone-sport pre-request config | |
-| 8/35 | vitality score | ✓ |
-| 8/38–40 | curse records/prediction/notify flags | |
-| 8/41 | sleep segment write-back | |
-| 8/42 | goals get | ✓ |
-| 8/43 | goals set | |
-| 8/45 | start real-time heart rate | ✓ |
-| 8/46 | stop real-time heart rate | |
-| 8/48–52 | sport/report variants, vitality upload, sport config | |
-| 8/57 | track get | |
-| 8/58 | track pre-install | |
-| 8/60 | track delete | |
-| 8/61 | sleep-rhythm monitor get | |
-| 8/62 | sleep-rhythm monitor set | |
-| 8/63 | sleep-rhythm reminder get | |
-| 8/64 | gym sport request | |
-| 8/65 | gym pace/speed/data | |
-| 8/67 | gym lock; machine screen wake | |
-| 8/68 | gym settings set | |
-| 8/69 | sleep-rhythm reminder set | |
-| 8/70 | research user profile | |
-| 8/71–75 | medical/research fitness ids | |
-| 8/76–79, 82 | research app/device lists, calibration, BP | |
-| 8/83 | Just Dance phone control | |
-| 8/87 | training-plan sync | |
-| 8/88 | training-plan stop | |
-
-## Type 17 — alarms, world clock, reminders
-
-| id | Meaning | ✓ |
-|---|---|---|
-| 17/0 | alarms get | |
-| 17/4 | alarms delete | |
-| 17/5 | alarm add/update; proto alarm sync | |
-| 17/6 | alarm weekday info | |
-| 17/8 | sleep model get | |
-| 17/9 | sleep model set; sleep-model time | |
-| 17/10–13 | world clock get/sync/delete | |
-| 17/14 | todo/event reminder get | |
-| 17/15 | todo/event reminder add/update | |
-| 17/16 | alarm alert/dismiss on watch | |
-| 17/17 | event reminder update | |
-| 17/18 | event reminder delete | |
-| 17/19 | reminder list sync | |
-
-## Type 21 — SOS and contacts
-
-| id | Meaning | ✓ |
-|---|---|---|
-| 21/0 | emergency contacts get | |
-| 21/1 | emergency contacts set; SOS contact sync | |
-| 21/3 | contact info send | |
-| 21/4 | top-contact list get | |
-| 21/5 | top-contact add | |
-| 21/7 | contact sync | |
-| 21/9 | SOS response | |
-
-## Useful probes to run next
-
-```bash
-uv run python src/xiaomi_client.py --send 2 19          # authorize unlock (laptop)
-uv run python src/xiaomi_client.py --send 2 65          # always-on display
-uv run python src/xiaomi_client.py --send 8 61          # sleep rhythm monitor
-```
-
-Start with ids whose payload is empty or one integer: a silent answer still tells us the watch
-knows the id. Record results in `DETAILS.md`.
 
 ## Limits
 
