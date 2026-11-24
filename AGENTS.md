@@ -31,10 +31,10 @@ word the Legal section forbids, and a malformed source tag.
 
 Never read `src/xiaomi_pb/`, `uv.lock`, `LICENSE` (generated / lockfile / legal, ~86k tokens).
 Read `proto/**/*.proto` only for the message you need, and `docs/*.md` on demand:
-`docs/README.md` indexes them (scripts and their flags: `docs/scripts.md`; wire format:
-`docs/protocol.md`; full channel table: `docs/apk-analysis.md`).
-`DETAILS.md` (Spanish) is the verified device reference (SDP services, protocol ids, firmware and
-battery facts, HFP measurements); update it when findings are confirmed on hardware.
+`docs/README.md` indexes them (scripts and their flags: `docs/scripts.md`; wire format and the
+channel table: `docs/protocol.md`; device facts and firmware history: `docs/device.md`; what each
+command returned on the watch: `docs/commands-tested.md`). Fact pages tag their sources
+(`[hw …]`, `[apk …]`, `[fw …]`, `[gb]`, `[inferred]`; legend in `docs/README.md`).
 
 ## Recording a finding
 
@@ -104,7 +104,7 @@ One file, layered; each layer is used only by the one above:
    when the window is full: pump and retry, never drop. `_pump()` decrypts and queues
    `xiaomi_pb2.Command` in `inbox`; `wait_for(type, subtype)` pops a match, `request(t, s)` =
    empty command + wait. Only `CH_PROTOBUF` (1) is decoded; other channels are logged and
-   dropped. 16 KB frames work; one 24 KB frame closes the link (`DETAILS.md`).
+   dropped. 16 KB frames work; one 24 KB frame closes the link (`docs/arq.md`).
 
 Rules when extending it:
 

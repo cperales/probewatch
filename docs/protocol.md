@@ -1,201 +1,115 @@
-# Protocol Specification — Xiaomi SPP v2
+# Protocol — Xiaomi SPP v2 wire format
 
-Xiaomi's proprietary protocol over Bluetooth Classic RFCOMM channel 2 (SPP), a port
-of Gadgetbridge's Java implementation.
+The bytes on RFCOMM channel 2: the L1 frame, the session-start exchange, the L2 channels and
+opcodes, and the v1 version probe. What happens on top is elsewhere: auth and encryption in
+[session.md](session.md), ACKs and retransmission in [arq.md](arq.md), command ids in
+[commands.md](commands.md).
+
+Source: [gb] (the client ports Gadgetbridge's Java SPP classes), matched by the app
+[apk 9.8.348i] and used against the watch [hw 2.2.110 2026-11-20], unless tagged.
 
 ## Transport
 
 | Layer | Protocol | Details |
 |---|---|---|
-| Physical | Bluetooth BR/EDR | Classic Bluetooth (not BLE) |
-| Link | RFCOMM | Channel 2 (SDP UUID `0x1101`, "BTS2 SPPA") |
-| Session | SPP v2 | Custom framing on top of RFCOMM |
-| Payload | Protobuf | Google Protocol Buffers (proto2) |
+| Physical | Bluetooth BR/EDR | Classic Bluetooth, not BLE |
+| Link | RFCOMM | channel 2 (SDP `0x1101`, "BTS2 SPPA") |
+| L1 | SPP v2 | `A5 A5` frames, ARQ |
+| L2 | `[channel, opcode, payload]` | inside DATA frames |
+| Payload | Protobuf (proto2) | `xiaomi.Command` on channel 1 |
 
-## Frame Format (SPP v2)
+## L1 frame
 
 ```
-Offset  Size    Field       Description
-------  ------  ----------  --------------------------------
-0       2       Preamble    0xA5 0xA5
-2       1       Type        Frame type (see below)
-3       1       Sequence    Client TX sequence (0-255, wraps)
-4       2       Length      Payload length (little-endian)
-6       2       CRC         CRC-16/ARC over payload
-8       N       Payload     Frame-specific data
+Offset  Size  Field    Description
+0       2     magic    0xA5 0xA5
+2       1     flags    (frx << 4) | type; frx 0 = NRX, 1 = FRX; the client sends frx 0
+3       1     seq      sender's sequence number, 0-255, wraps
+4       2     length   payload length, little-endian
+6       2     crc      CRC-16/ARC over the payload (poly 0xA001, init 0)
+8       N     payload
 ```
 
-| Type | Name | Direction | Purpose |
+The header layout is `L1Packet.getBytes()` in the app [apk 9.8.348i].
+
+| Type | Client name | App name | Purpose |
 |---|---|---|---|
-| 0 | NACK | Watch → PC | Bad frame received; expects retransmission |
-| 1 | ACK | PC → Watch | Acknowledges a DATA frame |
-| 2 | SESSION | Both | Session configuration (START/ACK) |
-| 3 | DATA | Both | Payload data (commands, responses) |
+| 0 | NACK | NAK | out-of-order frame; the peer resends ([arq.md](arq.md)) |
+| 1 | ACK | ACK | acknowledges DATA, cumulatively |
+| 2 | SESSION | CMD | transport control: start/stop and config |
+| 3 | DATA | DATA | an L2 packet |
 
-CRC is standard CRC-16/ARC (polynomial 0xA001, initial value 0).
+## Session start (CMD frames)
 
-## DATA frame payload
+The first payload byte of a type-2 frame selects the command [apk 9.8.348i]:
 
-```
-Byte 0: Channel (4 bits) | Flags (4 bits)
-Byte 1: Opcode
-Bytes 2+: Payload (plaintext or encrypted)
-```
-
-| Channel | Name | Purpose |
+| CMD | Value | Meaning |
 |---|---|---|
-| 1 | `CH_PROTOBUF` | Protobuf commands and responses |
-| 2 | `CH_DATA` | Raw data (mass data) |
-| 3 | `CH_MASS_VOICE` | Voice/audio payloads |
-| 4 | `CH_FILE_SENSOR` | Sensor file transfer |
-| 5 | `CH_ACTIVITY` | Activity files (fitness) |
-| 6 | `CH_OTA` | Firmware/asset update |
-| 7 | `CH_NETWORK` | Phone-as-network proxy |
-| 8 | `CH_LYRA` | Voice assistant |
-| 9 | `CH_RESEARCH` | Debug/research |
+| `CMD_L1START_REQ` | 1 | the client opens the transport and sends its config TLVs |
+| `CMD_L1START_RSP` | 2 | the peer accepts and sends its own |
+| `CMD_L1STOP_REQ` / `_RSP` | 3 / 4 | teardown; the client does not use it yet, it drops RFCOMM |
 
-| Opcode | Name | Encryption |
+Config TLVs are `type u8, length u16 LE, data`; `CONFIG_TYPE_*` is `1` VERSION, `2` MPS,
+`3` TX_WIN, `4` SEND_TIMEOUT, `5` DEVICE_TYPE, `6` DEVICE_NAME. `SESSION_START` in
+`src/xiaomi_client.py` is the 21-byte blob the app sends, captured rather than built: keep it as
+it is.
+
+### Session parameters
+
+| Parameter | Client → watch | Watch → client [hw 2.2.110 2026-11-20] |
 |---|---|---|
-| 1 | `OP_WRITE` | None (plaintext) |
-| 2 | `OP_WRITE_ENC` | AES-CTR (encrypted) |
-| 3 | `OP_READ` | None (query, no payload) |
+| Version | 1.0.0 | |
+| Max packet (MPS) | `0xFC00` (64512 B) | `0x8000` (32768 B) |
+| TX window | 32 | 3 |
+| Send timeout | 10000 ms | 16000 ms |
 
-NACK retransmit: the client stores the full encoded DATA frame (channel + opcode +
-encrypted payload) under its seq and resends it verbatim, once per seq.
+The client accepts whatever valid config the watch sends. In practice a 24 KB frame already
+closes the link ([arq.md](arq.md#measured)).
 
-Channels 2-9 are ACKed and then logged; `--capture` is the only way to record them
-with full detail. See [channels.md](channels.md) for the capture format, trigger matrix
-and analysis.
+## L2 packet (DATA payload)
 
-## SESSION frames
+`channel u8, opcode u8, payload` (`L2Packet` [apk 9.8.348i]). This is the one channel table;
+other pages link here.
 
-Client → Watch START_SESSION_REQUEST (after the version probe): opcode 1, version
-1.0.0, max packet 0xFC00, TX window 32, send timeout 10000 ms. The watch replies with
-its own config; the client accepts any valid config.
+| Ch | Client | App `L2Packet.Channel` | Internal type | Encrypted | Purpose |
+|---|---|---|---|---|---|
+| 1 | `CH_PROTOBUF` | `TRANSPORT_CHANNEL_PB` | 100 plain / 101 enc | yes | protobuf commands; the only channel the client decodes |
+| 2 | `CH_DATA` | `TRANSPORT_CHANNEL_MASS` | 104 | no | mass data, file push ([channels.md](channels.md), [ota.md](ota.md)) |
+| 3 | `CH_MASS_VOICE` | `TRANSPORT_CHANNEL_MASS_VOICE` | 103 | no | voice/audio payloads |
+| 4 | `CH_FILE_SENSOR` | `TRANSPORT_CHANNEL_FILE_SENSOR` | 107 `TYPE_CAPTURE` | no | sensor files |
+| 5 | `CH_ACTIVITY` | `TRANSPORT_CHANNEL_FILE_FITNESS` | 102 `TYPE_FITNESS` | no | activity files ([channels.md](channels.md)) |
+| 6 | `CH_OTA` | `TRANSPORT_CHANNEL_OTA` | 105 | no | firmware update, `ota_type = 1` models ([ota.md](ota.md)) |
+| 7 | `CH_NETWORK` | `TRANSPORT_CHANNEL_NETWORK` | 108 `TYPE_NET_PROXY` | no | phone as network proxy |
+| 8 | `CH_LYRA` | `TRANSPORT_CHANNEL_LYRA` | 112 | yes | voice assistant |
+| 9 | `CH_RESEARCH` | `TRANSPORT_CHANNEL_RESEARCH` | 113 | no | debug/research |
+
+"Encrypted" is the app's `needEncrypt()` ([session.md](session.md#encryption)).
+
+| Opcode | Client | Meaning |
+|---|---|---|
+| 1 | `OP_WRITE` | write, plaintext |
+| 2 | `OP_WRITE_ENC` | write, AES-CTR encrypted |
+| 3 | `OP_READ` | read; on channel 2 it is ACKed and unanswered ([channels.md](channels.md#findings)) [hw 2.2.111 2026-11-23] |
+
+The client ACKs frames on every channel but decodes only channel 1. The others are logged
+and dropped, and `--capture` is the only way to keep them.
 
 ## SPP v1 version probe
 
-`BA DC FE 00 C0 03 00 00 00 00 EF` (channel 0, flags 0xC0, length 3, opcode READ,
-serial 0, type 0). The watch replies with version bytes; the client requires >= 2.
+`BA DC FE 00 C0 03 00 00 00 00 EF`: channel 0, flags `0xC0` (flag | needs-response), length 3,
+opcode READ, serial 0, type 0. The watch answers with version bytes, `02 00 5f` on this watch.
+The client requires v2 and aborts otherwise. v1 has no CRC and carries nothing else here.
 
-## Protobuf command format
+## Protobuf command
 
-After auth all traffic is proto2 `Command { required uint32 type = 1; optional uint32
-subtype = 2; optional System system = 4; ... optional uint32 status = 100; }`.
-Payloads are built with `text_format.Parse`, so the caller names every field.
-
-| Type/Subtype | Name |
-|---|---|
-| 1/26, 1/27 | Auth steps 1 and 3 |
-| 2/1 | Battery |
-| 2/2 | Device info |
-| 2/14 | Misc setting get |
-| 2/15 | Misc setting set |
-| 2/18 | Find device |
-| 2/23 | DND mode set (Gadgetbridge) |
-| 2/24 | Raise-to-wake get |
-| 2/25 | Raise-to-wake set (proto comment) |
-| 2/34 | DND status (proto comment) |
-| 2/39 | Workout types |
-| 2/51 | Widget screens |
-| 2/53 | Widget parts |
-| 4/0 | Watchface list |
-| 4/1 | Watchface set/ack |
-| 4/2 | Watchface delete |
-| 4/4 | Watchface install status |
-
-## Hardware verification (Redmi Watch 5 Active, firmware 2.2.110)
-
-| Command | Result |
-|---|---|
-| 2/1, 2/2, 2/14, 2/18, 2/39, 2/51, 2/53 | ✓ data response |
-| 2/24 (raise-to-wake get) | ✓ `raiseToWake { mode: 2 start 8:00 end 22:00 }` |
-| 2/25 (raise-to-wake set) | ✗ transport ACK, no reply; value unchanged |
-| 2/23, 2/34 (DND) | ✗ `status: 1` |
-| 8/2 (activity today) | ✓ `activityRequestFileIds: ""` |
-| 8/3 (activity past) | ✗ no answer |
-| 8/29 (workout status v2) | ✓ `workoutStatusWatchV2 { status: 0 }` |
-| 8/45 (real-time stats) | no reply; starts the `8/47` stream |
-| 8/47 (unsolicited) | ✓ `realTimeStats { steps calories heartRate }` every ~1 s |
-| 4/0 (watchface list) | ✓ `watchfaceList` with 4 faces |
-
-### Verified outbound writes
-
-Find-device (no persistent state):
+On channel 1 the payload is a proto2 `xiaomi.Command` (from `proto/xiaomi.proto`):
 
 ```
-uv run python src/xiaomi_client.py --send 2 18 --payload 'system { findDevice: 0 }' --listen 8
-# -> status: 0, watch rings; it sends system { findDevice: 1 } when the alert ends
+required uint32 type = 1;  optional uint32 subtype = 2;
+optional ... payload fields 3..25 ...;  optional uint32 status = 100;
 ```
 
-Keep the link open: a bare `--send 2 18` that disconnected right after `status: 0` did not ring.
-
-DND sync (2/14 get setting 2, 2/15 set). Original `enabled: 0`:
-
-```
-uv run python src/xiaomi_client.py --send 2 14 --payload 'system { miscSettingGet { setting: 2 } }'
-uv run python src/xiaomi_client.py --send 2 15 --payload 'system { miscSettingSet { dndSync { enabled: 1 } } }'
-uv run python src/xiaomi_client.py --send 2 14 --payload 'system { miscSettingGet { setting: 2 } }'
-uv run python src/xiaomi_client.py --send 2 15 --payload 'system { miscSettingSet { dndSync { enabled: 0 } } }'
-uv run python src/xiaomi_client.py --send 2 14 --payload 'system { miscSettingGet { setting: 2 } }'
-```
-
-Notification settings (2/14 get setting 1, 2/15 set). Original `2/1/1`:
-
-```
-uv run python src/xiaomi_client.py --send 2 15 --payload 'system { miscSettingSet { miscNotificationSettings { wakeScreen: 1 onlyWhenPhoneLocked: 2 onlyWhenWorn: 2 } } }'
-uv run python src/xiaomi_client.py --send 2 14 --payload 'system { miscSettingGet { setting: 1 } }'
-uv run python src/xiaomi_client.py --send 2 15 --payload 'system { miscSettingSet { miscNotificationSettings { wakeScreen: 2 onlyWhenPhoneLocked: 1 onlyWhenWorn: 1 } } }'
-uv run python src/xiaomi_client.py --send 2 14 --payload 'system { miscSettingGet { setting: 1 } }'
-```
-
-Payload constraints: `HourMinute` requires both `hour` and `minute`; `wakeScreen`
-0 ignore / 1 enable / 2 disable, `onlyWhenPhoneLocked` 0 ignore / 1 enable / 2 disable,
-`onlyWhenWorn` 1 enable / 2 disable. `DoNotDisturb.status` is 0 enabled / 2 disabled.
-The watch does not implement the writes for 2/23, 2/25, 2/34, 2/78 or 2/79: every DND
-variant returns `status: 1` and leaves `dndSync.enabled` unchanged. Full attempts are in
-`DETAILS.md`.
-
-## Authentication flow
-
-3-step auth uses the watch's auth key (from Mi Fitness):
-
-```
-PC → Watch: Command(1,26) { auth { appVerify { nonce = phone_nonce (16 B) } } }
-Watch → PC: Command(1)   { auth { deviceVerify { nonce, hmac } } }
-
-HKDF-SHA256(auth_key, phone_nonce||watch_nonce, "miwear-auth", 64)
-  → [dec_key(16) | enc_key(16) | dec_nonce(4) | enc_nonce(4)]
-
-PC → Watch: Command(1,27) { auth { appConfirm {
-  encryptedNonces = HMAC(enc_key, phone_nonce||watch_nonce),
-  encryptedDeviceInfo = AES-CCM(device_info, tag=4) } } }
-```
-
-After step 3 `encrypted = True`; auth commands (`type == 1`) stay plaintext.
-
-## Encryption details
-
-AES-CTR uses the 16-byte key itself as the IV for every message, no counter increment.
-AES-CCM (auth step 3 only) uses nonce = `enc_nonce || counter_hi(4) || counter_lo(4)`
-with a 4-byte tag.
-
-## Session parameters
-
-| Parameter | Value | Source |
-|---|---|---|
-| Max packet size | 0xFC00 (64000 B) | Client → Watch |
-| TX window | 32 | Client → Watch |
-| Send timeout | 10000 ms | Client → Watch |
-| Watch max packet | 0x8000 (32768 B) | Watch → Client |
-| Watch TX window | 3 | Watch → Client |
-| Watch timeout | 16000 ms | Watch → Client |
-
-## Protocol evolution
-
-| Version | Preamble | CRC | Status |
-|---|---|---|---|
-| v1 | `BA DC FE ... EF` | None | Version probe only |
-| v2 | `A5 A5` + header | CRC-16/ARC | Full protocol |
-
-The client probes v1 first, then switches to v2 framing. Only v2 carries data.
+The CLI builds payloads with `text_format.Parse`, so the caller names every field, and proto2
+`required` fields must be set or `SerializeToString()` raises. The `(type, subtype)` ids are in
+[commands.md](commands.md), and what the watch answers is in
+[commands-tested.md](commands-tested.md).

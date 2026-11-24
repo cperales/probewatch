@@ -70,4 +70,4 @@ terms of service.
 | [architecture.md](architecture.md) | `xiaomi_client.py` layers, crypto, framing |
 | [protocol.md](protocol.md) | SPP v2 protocol spec, frame format, auth flow |
 | [audio.md](audio.md) | HFP audio subsystem, SCO quirks, measurements |
-| [DETAILS.md](../DETAILS.md) | Device/protocol reference (Spanish) |
+| [device.md](device.md) | The watch: identity, firmware history, SDP services |

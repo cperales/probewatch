@@ -5,6 +5,8 @@ the Bluetooth stack: SPP, the protobuf dispatcher, the login/auth FSM, the mass-
 and the L2 channel routing. This page records what static analysis found and what one read-only
 hardware probe confirmed. Legal framing is [README.md](../README.md#legal).
 
+Source: [fw 2.2.111] unless tagged.
+
 ## What it is
 
 `scripts/extract_firmware.py` unpacks `image1` to 5,578,752 B. Its strings name the protocol
@@ -38,28 +40,14 @@ side of the protocol is here; the phone side is [apk-analysis.md](apk-analysis.m
 | Mass-file receiver | `FUN_12173a14`: the header event requires state `0x20`, clears a `0x140`-byte buffer, logs `mass_file_bin_header=…` and validates the first word against **`0xafcdefad`** (the SiFli package magic) |
 | HKDF source | `hkdf_sha256.c` with the `okm_size < 255 * sizeof(t)` assertion |
 
-## Auth and session lifetime
+## What it explains
 
-The watch derives the session key exactly like `derive_keys()` in `src/xiaomi_client.py`:
-HKDF-SHA256 with IKM = the 16-byte auth key, salt = `rand_app ‖ rand_dev` (2 × 16 B, built by two
-16-byte copies), info = `miwear-auth` (11 B), L = 64. The watch names the split
-`session_key.dev_key` / `app_key`. The `miwear-bind` derivation belongs to the companion-device
-binding path, which this client does not use.
-
-Why sessions die at ~20 s: the client completes device auth, but the **login FSM** waits in
-`WAIT_APP_VERIFY`/`WAIT_APP_CONFIRM` for the Mi Fitness app-level exchange. The FSM's 10 s
-timer fires, `SCHD_EVT_ADMIN_LOGIN_RESTART` restarts it once, and the second timeout frees the
-login session and the link drops — matching the measured 20–26 s. The Linux client never sends
-the app verify/confirm, so every session ends this way. Measured 2026-11-23: auth at 2.44 s,
-last frame at 25.47 s (**~23 s post-auth**) with a keepalive every 3 s — traffic does not
-extend it.
-
-## Hardware probe (read-only)
-
-2026-11-23, firmware 2.2.111, phone Bluetooth off. Connect + auth succeeded; `OP_READ` (3) on
-**channel 2** with a 4-byte `Command{0,0}` (`08001000`) was ACKed at L1, produced no channel-2
-DATA and did not reset within 4 s. An unsolicited mass-channel read is transport-valid but not
-answered — consistent with [channels.md](channels.md).
+- **Key derivation**: the watch's HKDF matches `derive_keys()` byte for byte; the split and the
+  unused `miwear-bind` path are in [session.md](session.md#key-derivation).
+- **Session lifetime**: the login FSM's 10 s timer, restarted once, is why every session ends
+  ~20 s after auth ([session.md](session.md#lifetime)).
+- **Mass channel**: an unsolicited `OP_READ` on channel 2 is valid at L1 but not answered
+  [hw 2.2.111 2026-11-23] ([channels.md](channels.md#findings)).
 
 ## Next
 
@@ -68,4 +56,5 @@ answered — consistent with [channels.md](channels.md).
 2. Reproduce the app login/verify exchange (from the APK) so the FSM leaves
    `WAIT_APP_VERIFY` — that is what keeps a session alive.
 3. Mass push: match the APK's `MassDataDispatcher` framing to `FUN_12173a14`, then probe.
-4. Verify on hardware and update `DETAILS.md` with measured facts.
+4. Verify on hardware and record the result on its topic page ("Recording a finding" in
+   `AGENTS.md`).

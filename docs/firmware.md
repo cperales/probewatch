@@ -4,11 +4,13 @@ The image the watch runs, and what it says about the device. This page is static
 was downloaded, unpacked and disassembled locally; nothing was flashed or executed and the
 watch is not contacted. Legal framing is [README.md](../README.md#legal).
 
+Source: [fw 2.2.111] unless tagged.
+
 ## Provenance
 
 | Fact | Value |
 |---|---|
-| Version | 2.2.111 (was 2.2.110; Mi Fitness installed it on 2026-11-22) |
+| Version | 2.2.111 ([firmware history](device.md#firmware-history)) |
 | File | `3b86d2fa0b2572e42bd09b4bfd2da6eb_upd_lchz.watch.n65agl.bin` |
 | Size | 3,452,039 B |
 | MD5 | `3b86d2fa0b2572e42bd09b4bfd2da6eb` (equals the server's) |
@@ -70,11 +72,9 @@ unless the blocks sum to exactly `0x552000` B.
 
 ## Which OTA engine this model uses
 
-The app logs `productDevice = ota_type 2` for `M2351W1`: the **general** engine, i.e. a
-protobuf prepare (`Command{type=2, subtype=5}` `{force, type=15, firmwareVersion, fileMd5}`)
-followed by a **mass-channel (2 / 104) file push**, not the channel-6 `0x5A` protocol. Channel
-6 (`HyOtaExecutor`) belongs to `ota_type = 1` models and is documented in [ota.md](ota.md) for
-completeness; `--ota-require` is not answered by this watch.
+`ota_type = 2`, the general engine: a protobuf prepare (`2/5`) followed by a mass-channel file
+push, not the channel-6 protocol. The update flow is in [ota.md](ota.md); the installer that
+receives it is the DFU cluster below.
 
 ## Sound and alarms
 
@@ -123,4 +123,5 @@ the LCPU contains, and the one probe run so far, is in [lcpu.md](lcpu.md).
    `src/xiaomi_client.py`.
 2. HCPU: diff the plaintext app against open-source RT-Thread to name the scheduler, drivers,
    FAL/FlashDB and DFU routines; the installer cluster is already located.
-3. Verify anything claimed on hardware; update `DETAILS.md` only with measured facts.
+3. Verify anything claimed on hardware; record measured facts on their topic page
+   ("Recording a finding" in `AGENTS.md`).

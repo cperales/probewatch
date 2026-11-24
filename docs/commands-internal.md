@@ -2,8 +2,8 @@
 
 The long tail of the `(type, subtype)` catalogue: bind/auth, NFC, eSIM, weather, stocks,
 calendar, factory/debug, media, Alexa, app management and MiLink. Same provenance as
-[commands.md](commands.md) (read from Mi Fitness 9.8.348i; ✓ = confirmed on the watch,
-✗ = rejected, per `DETAILS.md`).
+[commands.md](commands.md): read from the app, source [apk 9.8.348i] unless tagged;
+✓ = confirmed on the watch, ✗ = rejected, details in [commands-tested.md](commands-tested.md).
 
 Most of these need a structured payload, so they are documentation rather than ready probes.
 Meanings are the app's method and class names; where those are opaque (`fz2#a`), they are the

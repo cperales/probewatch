@@ -5,19 +5,24 @@ short contract. `make sizes` tracks their cost (~3.8 bytes/token).
 
 | Document | Size | Description |
 |---|---|---|
-| [overview.md](overview.md) | 4 KB | Project overview, capabilities, architecture diagram |
+| [overview.md](overview.md) | 4 KB | Project overview, capabilities, script map |
 | [setup.md](setup.md) | 4 KB | Bootstrap, dependencies, environment, troubleshooting |
 | [scripts.md](scripts.md) | 8 KB | Every script: purpose, arguments, usage examples |
-| [architecture.md](architecture.md) | 7 KB | `src/xiaomi_client.py` layers, crypto, protobuf bindings |
-| [protocol.md](protocol.md) | 8 KB | SPP v2 frame format, auth flow, encryption, command types |
-| [commands.md](commands.md) | 8 KB | Command ids from the app: system, settings, notifications, health |
+| [device.md](device.md) | 4 KB | The watch: identity, firmware history, Bluetooth identity, SDP services |
+| [architecture.md](architecture.md) | 7 KB | `src/xiaomi_client.py`: layers, functions, protobuf bindings |
+| [protocol.md](protocol.md) | 5 KB | Wire format: L1 frame, session start, the channel/opcode table, v1 probe |
+| [session.md](session.md) | 5 KB | Handshake, auth, HKDF keys, AES-CTR/CCM, session lifetime |
+| [arq.md](arq.md) | 3 KB | L1 ACKs, windows and retransmission; app constants and measurements |
+| [commands.md](commands.md) | 4 KB | Command ids from the app: system, settings, watchfaces |
+| [commands-health.md](commands-health.md) | 4 KB | Command ids: notifications, health, alarms, contacts |
 | [commands-internal.md](commands-internal.md) | 5 KB | Command ids: bind, NFC, eSIM, media, apps, mass channel |
-| [channels.md](channels.md) | 7 KB | Channels 2 and 5: capture method, trigger matrix, analysis |
-| [apk-analysis.md](apk-analysis.md) | 7 KB | Official app: provenance, L1 ARQ, full channel table, crypto |
+| [commands-tested.md](commands-tested.md) | 6 KB | What each command returned on the watch: reads, writes, live stream |
+| [channels.md](channels.md) | 7 KB | Channels 2 and 5: capture method, trigger matrix, analysis, findings |
+| [apk-analysis.md](apk-analysis.md) | 4 KB | Official app: provenance, where the protocol lives, what it gave |
 | [ota.md](ota.md) | 6 KB | Official app's firmware update: version check, download, channel-6 protocol |
-| [firmware.md](firmware.md) | 7 KB | The watch package: two images (HCPU/LCPU), unpacking, DFU, `ota_type` |
-| [lcpu.md](lcpu.md) | 5 KB | LCPU firmware: SPP/protobuf/mass code, load map, one probe |
-| [audio.md](audio.md) | 5 KB | HFP audio, SCO quirks, verification, workarounds |
+| [firmware.md](firmware.md) | 7 KB | The watch package: two images (HCPU/LCPU), unpacking, DFU, load map |
+| [lcpu.md](lcpu.md) | 4 KB | LCPU firmware: SPP/protobuf/mass code, load map, login FSM |
+| [audio.md](audio.md) | 6 KB | HFP audio, SCO quirks, verification, workarounds |
 
 ## Sources
 
@@ -27,8 +32,8 @@ use a `Source` column. `make lint` checks the syntax.
 
 | Tag | Meaning |
 |---|---|
-| `[hw 2.2.111 2026-11-24]` | measured on the watch (firmware, date) |
-| `[apk 9.8.348i]` | read from the Mi Fitness APK, static analysis |
+| `[hw 2.2.111 2026-11-24]` | measured on the watch: firmware (`?` if not recorded) and date (of the measurement, or of the commit that first recorded it) |
+| `[apk 9.8.348i]` | from the Mi Fitness app: APK static analysis, or its own logs |
 | `[fw 2.2.111]` | read from the firmware image, static analysis |
 | `[gb]` | from Gadgetbridge or the vendored `.proto` files |
 | `[inferred]` | reasoned, not confirmed |
@@ -39,6 +44,7 @@ a finding too.
 ## Quick links
 
 - **Getting started**: [setup.md](setup.md) → [scripts.md](scripts.md)
-- **Understanding the protocol**: [protocol.md](protocol.md) → [architecture.md](architecture.md) → [apk-analysis.md](apk-analysis.md) → [commands.md](commands.md) → [ota.md](ota.md) → [firmware.md](firmware.md) → [lcpu.md](lcpu.md)
+- **The watch**: [device.md](device.md) → [commands-tested.md](commands-tested.md)
+- **Understanding the protocol**: [protocol.md](protocol.md) → [session.md](session.md) → [arq.md](arq.md) → [commands.md](commands.md) → [architecture.md](architecture.md)
+- **Sources**: [apk-analysis.md](apk-analysis.md) (the app) → [ota.md](ota.md) → [firmware.md](firmware.md) → [lcpu.md](lcpu.md) (the watch)
 - **Audio troubleshooting**: [audio.md](audio.md)
-- **Device reference** (Spanish): [DETAILS.md](../DETAILS.md)

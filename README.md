@@ -198,5 +198,6 @@ breach Mi Fitness terms of service; you are responsible for what you do with you
 
 ## Reference
 
-- `DETAILS.md` — Spanish-language device/protocol reference with verified SDP service table,
-  SPP session parameters, protocol IDs, firmware/serial/battery facts, and HFP measurements.
+- [`docs/device.md`](docs/device.md) — the watch: identity, firmware history, Bluetooth identity
+  and SDP services. Hardware results live on their topic pages, indexed in
+  [`docs/README.md`](docs/README.md).
