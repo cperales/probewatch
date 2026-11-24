@@ -103,8 +103,9 @@ One file, layered; each layer is used only by the one above:
    pending) except on channels 1 and 8, which are ACKed at once. `_send_data` returns `None`
    when the window is full: pump and retry, never drop. `_pump()` decrypts and queues
    `xiaomi_pb2.Command` in `inbox`; `wait_for(type, subtype)` pops a match, `request(t, s)` =
-   empty command + wait. Only `CH_PROTOBUF` (1) is decoded; other channels are logged and
-   dropped. 16 KB frames work; one 24 KB frame closes the link (`docs/arq.md`).
+   empty command + wait. Only `CH_PROTOBUF` (1) and `CH_OTA` (6) are decoded; other channels
+   are logged and dropped. 16 KB frames work; one 24 KB frame closes the link (`docs/arq.md`).
+   Long form: `docs/architecture.md`.
 
 Rules when extending it:
 

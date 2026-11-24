@@ -45,29 +45,13 @@ in the git-ignored `secrets/` directory.
   must be off for scripts to see the watch.
 - **Auth key is persistent**: resetting/unbinding the watch from Mi Fitness regenerates the
   key and invalidates `secrets/auth_key.txt`. Use `--direct` pairing to avoid this.
-- **No build system**: this is a collection of standalone Python scripts. Verification means
-  running them against the physical watch.
+- **No build step**: standalone Python scripts. `make check` (lint, tests, size budget) needs
+  no watch; hardware behaviour is verified only by running a script against the watch.
 - **System Python required**: `socket.AF_BLUETOOTH` is only available in the distro CPython
   build. `pyproject.toml` enforces `python-preference = "system"`.
 
-## Licensing
+## Licensing and legal
 
-This repository is **AGPL-3.0-or-later**. `proto/` is vendored from
-[Gadgetbridge](https://codeberg.org/Freeyourgadget/Gadgetbridge) (AGPL-3.0) and
-`src/xiaomi_client.py` is a port of Gadgetbridge's Java SPP/auth classes. Treat new
-protocol code as an AGPL-3.0 derivative.
-
-This is an unofficial hobby project, provided as-is: see the Legal section in
-[README.md](../README.md#legal). Running it may void the watch's warranty or breach Mi Fitness
-terms of service.
-
-## Reference documents
-
-| Document | Contents |
-|---|---|
-| [setup.md](setup.md) | Bootstrap, dependencies, environment |
-| [scripts.md](scripts.md) | Every script: purpose, arguments, examples |
-| [architecture.md](architecture.md) | `xiaomi_client.py` layers, crypto, framing |
-| [protocol.md](protocol.md) | SPP v2 protocol spec, frame format, auth flow |
-| [audio.md](audio.md) | HFP audio subsystem, SCO quirks, measurements |
-| [device.md](device.md) | The watch: identity, firmware history, SDP services |
+AGPL-3.0-or-later; `proto/` and the protocol port derive from Gadgetbridge. Licensing details
+are in [README.md](../README.md#provenance--licensing) and the disclaimer is in
+[README.md](../README.md#legal). The docs index is [README.md](README.md).

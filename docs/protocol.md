@@ -68,12 +68,13 @@ closes the link ([arq.md](arq.md#measured)).
 
 ## L2 packet (DATA payload)
 
-`channel u8, opcode u8, payload` (`L2Packet` [apk 9.8.348i]). This is the one channel table;
-other pages link here.
+`channel u8, opcode u8, payload` (`L2Packet` [apk 9.8.348i]). The client, like Gadgetbridge,
+uses only the low nibble of the channel byte [gb]. This is the one channel table; other pages
+link here.
 
 | Ch | Client | App `L2Packet.Channel` | Internal type | Encrypted | Purpose |
 |---|---|---|---|---|---|
-| 1 | `CH_PROTOBUF` | `TRANSPORT_CHANNEL_PB` | 100 plain / 101 enc | yes | protobuf commands; the only channel the client decodes |
+| 1 | `CH_PROTOBUF` | `TRANSPORT_CHANNEL_PB` | 100 plain / 101 enc | yes | protobuf commands |
 | 2 | `CH_DATA` | `TRANSPORT_CHANNEL_MASS` | 104 | no | mass data, file push ([channels.md](channels.md), [ota.md](ota.md)) |
 | 3 | `CH_MASS_VOICE` | `TRANSPORT_CHANNEL_MASS_VOICE` | 103 | no | voice/audio payloads |
 | 4 | `CH_FILE_SENSOR` | `TRANSPORT_CHANNEL_FILE_SENSOR` | 107 `TYPE_CAPTURE` | no | sensor files |
@@ -91,8 +92,9 @@ other pages link here.
 | 2 | `OP_WRITE_ENC` | write, AES-CTR encrypted |
 | 3 | `OP_READ` | read; on channel 2 it is ACKed and unanswered ([channels.md](channels.md#findings)) [hw 2.2.111 2026-11-23] |
 
-The client ACKs frames on every channel but decodes only channel 1. The others are logged
-and dropped, and `--capture` is the only way to keep them.
+The client ACKs frames on every channel but decodes only channel 1 (protobuf) and channel 6
+(OTA segments). The others are logged and dropped, and `--capture` is the only way to keep
+them.
 
 ## SPP v1 version probe
 

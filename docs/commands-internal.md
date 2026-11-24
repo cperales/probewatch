@@ -21,7 +21,7 @@ best reading of the call site.
 | 1/25 | bind confirm variant | |
 
 These are transport-level bind messages. The client's own auth steps already live on type 1
-(always channel 1, plaintext; see [protocol.md](protocol.md)) and are not `--send` experiments.
+(always channel 1, plaintext; see [session.md](session.md#authentication)) and are not `--send` experiments.
 
 ## Type 5 — NFC and transit cards
 
