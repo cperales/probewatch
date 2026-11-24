@@ -91,7 +91,7 @@ devolviendo `status: 1`. Las escrituras de la tabla no se repitieron en 2.2.111.
 | `--send 8 8` (2.2.111) | ✓ — ajustes de SpO2: `allDayCapable: 1 mode: SPO2_MODE_OFF`, alarma baja desactivada (umbral 80) |
 | `--send 8 12` (2.2.111) | ✓ — `standingReminder { enabled: true dnd: true }`, pero las horas salen fuera de rango (`start 14:96`, `dndEnd 160:30`): el proto probablemente no encaja con lo que envía este firmware |
 | `--send 8 35` (2.2.111) | ✓ — `vitalityScore { sevenDay: false dailyProgress: false }` |
-| `--send 7 43` (goals, 2.2.111) | ✗ — `status: 1` |
+| `--send 8 42` (goals get, 2.2.111) | ✓ — `currentGoals: 1,2,3`, `supportedGoals: 1,2,3,4` |
 
 El reloj es un modelo de firmware limitado: las escrituras de DND (2/23, 2/34),
 raiseToWake (2/25) y deviceState (2/78, 2/79) no están implementadas. DND se probó de

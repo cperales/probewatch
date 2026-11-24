@@ -31,14 +31,14 @@ QUERIES = [
     ("widget-screens", 2, 51),
     ("widget-parts", 2, 53),
     ("device-state-full", 2, 79),
-    ("heart-rate-settings", 8, 8),
+    ("heart-rate-settings", 8, 10),
     ("standing-reminder", 8, 12),
-    ("goal-notification", 8, 13),
+    ("goal-notification", 8, 21),
     ("vitality-score", 8, 35),
     ("real-time-stats", 8, 45),
     ("activity-today", 8, 2),
     ("activity-past", 8, 3),
-    ("goals-config", 7, 43),
+    ("goals-config", 8, 42),
     ("find-device (rings the watch)", 2, 18),
 ]
 
