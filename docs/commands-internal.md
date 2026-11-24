@@ -2,8 +2,9 @@
 
 The long tail of the `(type, subtype)` catalogue: bind/auth, NFC, eSIM, weather, stocks,
 calendar, factory/debug, media, Alexa, app management and MiLink. Same provenance as
-[commands.md](commands.md): read from the app, source [apk 9.8.348i] unless tagged;
-✓ = confirmed on the watch, ✗ = rejected, details in [commands-tested.md](commands-tested.md).
+[commands.md](commands.md): read from the app, source [apk 9.8.348i] unless tagged. A **✓**
+marks an id the watch answered or acted on and **✗** one it rejects; results, firmware and
+dates are in [commands-tested.md](commands-tested.md).
 
 Most of these need a structured payload, so they are documentation rather than ready probes.
 Meanings are the app's method and class names; where those are opaque (`fz2#a`), they are the
@@ -11,7 +12,7 @@ best reading of the call site.
 
 ## Type 1 — auth and bind
 
-| id | Meaning | ✓ |
+| id | Meaning | Watch |
 |---|---|---|
 | 1/1 | bind info get (v1 binder) | |
 | 1/2 | bind result send (v1) | |
@@ -61,7 +62,7 @@ Built by `defpackage.fz2` (the NFC facade) and `AutoSwitchCardViewModel`.
 
 ## Type 10 — weather
 
-| id | Meaning | ✓ |
+| id | Meaning | Watch |
 |---|---|---|
 | 10/0–2 | weather payload parts (city, current, forecast) | |
 | 10/4 | weather + pressure | |

@@ -102,8 +102,8 @@ channel 2, zero on channel 5.
 |---|---|
 | No frame on channel 2 or 5, in any scenario | Idle, keepalive, query matrix, live workout, after the workout |
 | Live health data is protobuf on **channel 1**, not channel 5 | `8/45` starts the `8/47` stream ([commands-tested.md](commands-tested.md#live-health-stream)) |
-| A workout does not open a new channel | Four sessions during active squats: 114 frames, all on channel 1 |
-| Activity files are never queued, even after saving the workout | `8/2` replies `activityRequestFileIds: ""` before, during and after |
+| A workout does not open a new channel | [commands-tested.md](commands-tested.md#live-health-stream) |
+| Activity files are never queued, even after saving the workout | [commands-tested.md](commands-tested.md#live-health-stream) |
 | Channel 2 `OP_READ` is ACKed but silent [hw 2.2.111 2026-11-23] | 4-byte `Command{0,0}` (`08001000`) with opcode 3 → L1 ACK, no channel-2 DATA, no reset within 4 s |
 | Still nothing on 2.2.111 [hw 2.2.111 2026-11-24] | 7 idle sessions: only the auth frames, all on channel 1 |
 
