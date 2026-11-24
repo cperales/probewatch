@@ -13,8 +13,10 @@
 | Campo | Valor |
 |---|---|
 | Watch OS | Xiaomi HyperOS |
-| Número de versión | V2.2.105 |
+| Número de versión | **2.2.111** (leído por protocolo, `2/2`, 2026-11-24). Historial: 2.2.105 en pantalla al estrenarlo → 2.2.110 (2026-11-16, tras vincular con Mi Fitness) → 2.2.111 (instalado por Mi Fitness el 2026-11-22) |
 | Número de serie | Ver `secrets/device.md` (no se publica) |
+| Motor OTA | `ota_type = 2` (Mi Fitness, etiqueta `CheckUpdate`, 2026-11-22): actualización general por el canal mass, no por el canal 6 |
+| SoC | SiFli SF32LB5x, doble núcleo Cortex-M33: HCPU (aplicación RT-Thread) + LCPU (pila Bluetooth/SPP). Deducido del paquete 2.2.111 (análisis estático, `docs/firmware.md`); SKU exacto sin confirmar |
 
 ## Bluetooth (obtenido desde el PC)
 
@@ -28,6 +30,7 @@
 | PnP / Modalias | `bluetooth:v0AC4pB009d011B` (vendor `0x0AC4`, producto `0xB009`, versión `0x011B`) |
 | Emparejamiento | Secure Simple Pairing, comparación numérica (no legacy) |
 | Visible para otros | Solo en modo "Conectar teléfono nuevo"; si está vinculado no anuncia |
+| Revisión 2026-11-24 (2.2.111) | Clase, modalias (`d011B`) y los UUID que BlueZ tiene en caché no cambian. `sdptool` no sirvió para releer los registros: `browse` solo devolvió HID y PnP, y `records` agotó el tiempo de espera. La tabla de servicios es la de 2.2.110 |
 
 ### Servicios (SDP)
 
@@ -62,6 +65,10 @@
 
 ### Comandos probados (firmware 2.2.110, modelo limitado)
 
+Revisado en **2.2.111** el 2026-11-24, solo con lecturas: `2/1`, `2/2`, `2/14` (settings 1 y 2),
+`2/24`, `2/51`, `4/0`, `8/2` y `8/29` responden igual que en 2.2.110, y `2/34` y `2/78` siguen
+devolviendo `status: 1`. Las escrituras de la tabla no se repitieron en 2.2.111.
+
 | Comando | Resultado |
 |---|---|
 | `--send 2 1` (battery) | ✓ — `level: 100, state: 3` |
@@ -81,6 +88,10 @@
 | `--send 4 0` (watchface list) | ✓ — 4 esferas: Swirl (activa), Dynamic data, Step space, Twilight |
 | `--send 4 1` (watchface set) | ACK — `ack: 1`, no es la lista |
 | `--send 4 4` (install status) | ✓ — `watchface {}` vacío |
+| `--send 8 8` (2.2.111) | ✓ — ajustes de SpO2: `allDayCapable: 1 mode: SPO2_MODE_OFF`, alarma baja desactivada (umbral 80) |
+| `--send 8 12` (2.2.111) | ✓ — `standingReminder { enabled: true dnd: true }`, pero las horas salen fuera de rango (`start 14:96`, `dndEnd 160:30`): el proto probablemente no encaja con lo que envía este firmware |
+| `--send 8 35` (2.2.111) | ✓ — `vitalityScore { sevenDay: false dailyProgress: false }` |
+| `--send 7 43` (goals, 2.2.111) | ✗ — `status: 1` |
 
 El reloj es un modelo de firmware limitado: las escrituras de DND (2/23, 2/34),
 raiseToWake (2/25) y deviceState (2/78, 2/79) no están implementadas. DND se probó de
@@ -110,6 +121,17 @@ Las cadenas de payload y las restricciones están en `docs/protocol.md` (secció
 | `8/3` (actividad pasada) | Sin respuesta |
 | `8/8`, `8/12`, `8/35` | Responden con datos |
 | Canales 2 y 5 | **Ningún frame** en ninguna de las cinco sesiones capturadas |
+| `OP_READ` en el canal 2 (2026-11-23, 2.2.111) | `Command{0,0}` (`08001000`) con opcode 3: ACK de L1, ningún DATA en el canal 2 y ningún reinicio en 4 s |
+
+### Revisión en 2.2.111 (2026-11-24)
+
+| Hecho | Detalle |
+|---|---|
+| Duración de la sesión | 7 sesiones en reposo (`--listen 40`): 6 se cierran entre 22,1 y 22,4 s después de la autenticación; una se cerró a los 12,4 s. Es más estable que en 2.2.110, pero sigue sin depender del tráfico |
+| Causa probable del corte | El FSM de login del LCPU espera el intercambio verify/confirm de Mi Fitness; su temporizador de 10 s vence dos veces y se libera la sesión (análisis estático, `docs/lcpu.md`) |
+| Latido en reposo | **No aparece** el `18/0`: en las 7 sesiones, 3 de ellas con el reloj puesto, solo llegaron los dos frames de autenticación |
+| Datos de salud en vivo | `8/45` sigue sin respuesta directa y arranca `8/47` cada ~1 s por el canal 1. Con el reloj puesto, `heartRate` está a 0 durante ~18 s y luego da 58–62 ppm; `steps`/`calories` a 0 |
+| Capacidades (auth step 4) | `device_capability: 52851550` fijo; `device_capability_2` solo aparece en algunas sesiones y varía (p. ej. `20697`) |
 
 La captura se hace con `src/xiaomi_client.py --capture` (NDJSON, ambos sentidos) y se
 analiza en frío con `src/decode_capture.py`; el método y los resultados están en
@@ -134,6 +156,10 @@ con `--send` repetible.
 | Firmware | **2.2.110** (la pantalla mostraba 2.2.105; probablemente se actualizó al vincular con Mi Fitness) |
 | Batería | 86 %, cargando |
 | Última carga registrada | 2026-11-16 17:35:34 CET |
+
+Lectura del 2026-11-24: firmware **2.2.111**, batería `level: 95 state: 2`, última carga
+registrada el 2026-11-20 16:29:42 CET (`timestampSeconds: 1795188582`), y las mismas 4 esferas
+con Swirl activa.
 
 ## Audio HFP (verificado 2026-11-16 con `src/audio_test.py`)
 
