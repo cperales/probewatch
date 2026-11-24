@@ -17,14 +17,15 @@ git-ignored `secrets/` directory, never in tracked files.
 | `make setup` | `uv sync --python /usr/bin/python3` |
 | `make protos` | `./fetch_protos.sh`: pinned Gadgetbridge download + bindings |
 | `make check` | lint + tests + context budget + `compileall` |
-| `make lint` | `ruff check`, `ruff format --check`, `bash -n`/shellcheck on `fetch_protos.sh`, doc links |
+| `make lint` | `ruff check`, `ruff format --check`, `bash -n`/shellcheck on `fetch_protos.sh`, `scripts/check_docs.py` |
 | `make test` | `uv run pytest`; fetches protos first if `src/xiaomi_pb/` is missing |
-| `make fmt` | `ruff format .` and `ruff check --fix .` |
+| `make fmt` | `ruff format .`, `ruff check --fix .`, `check_docs.py --fix` (index sizes) |
 | `make sizes` | context-budget table; fails if `AGENTS.md` > 12,000 B or a `docs/*.md` > 8,000 B |
 
 Single test: `uv run pytest tests/test_xiaomi_client.py -k name`. Nothing in `make check` needs
 the watch: `hardware`/`network` markers are deselected by `addopts` in `pyproject.toml`.
-`make lint` also checks relative links in `README.md` and `docs/*.md`.
+`check_docs.py` fails on dead relative links, a stale or incomplete `docs/README.md` index, a
+word the Legal section forbids, and a malformed source tag.
 
 ## Context budget
 
@@ -34,6 +35,17 @@ Read `proto/**/*.proto` only for the message you need, and `docs/*.md` on demand
 `docs/protocol.md`; full channel table: `docs/apk-analysis.md`).
 `DETAILS.md` (Spanish) is the verified device reference (SDP services, protocol ids, firmware and
 battery facts, HFP measurements); update it when findings are confirmed on hardware.
+
+## Recording a finding
+
+Every fact has one home page in `docs/`; other files link to it, and `AGENTS.md` keeps only
+rules. When a hardware run, the APK or the firmware confirms or changes something:
+
+1. Find the home page through `docs/README.md`.
+2. `grep` its key terms across `AGENTS.md`, `README.md` and `docs/`. Update the home page with
+   a source tag (legend in `docs/README.md`); replace any other restatement with a link.
+3. A new firmware version also goes in the firmware history of the device page.
+4. `uv run python scripts/check_docs.py --fix`, then `make check`.
 
 ## Python environment
 

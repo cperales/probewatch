@@ -19,6 +19,23 @@ short contract. `make sizes` tracks their cost (~3.8 bytes/token).
 | [lcpu.md](lcpu.md) | 5 KB | LCPU firmware: SPP/protobuf/mass code, load map, one probe |
 | [audio.md](audio.md) | 5 KB | HFP audio, SCO quirks, verification, workarounds |
 
+## Sources
+
+Fact pages tag where each claim comes from. A page names its default source once under its
+title ("Source: [apk 9.8.348i] unless tagged"); only lines that differ carry a tag, and tables
+use a `Source` column. `make lint` checks the syntax.
+
+| Tag | Meaning |
+|---|---|
+| `[hw 2.2.111 2026-11-24]` | measured on the watch (firmware, date) |
+| `[apk 9.8.348i]` | read from the Mi Fitness APK, static analysis |
+| `[fw 2.2.111]` | read from the firmware image, static analysis |
+| `[gb]` | from Gadgetbridge or the vendored `.proto` files |
+| `[inferred]` | reasoned, not confirmed |
+
+When a newer firmware changes a result, keep the old line with its own tag: the difference is
+a finding too.
+
 ## Quick links
 
 - **Getting started**: [setup.md](setup.md) → [scripts.md](scripts.md)
