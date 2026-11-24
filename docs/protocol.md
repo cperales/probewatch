@@ -74,7 +74,7 @@ link here.
 
 | Ch | Client | App `L2Packet.Channel` | Internal type | Encrypted | Purpose |
 |---|---|---|---|---|---|
-| 1 | `CH_PROTOBUF` | `TRANSPORT_CHANNEL_PB` | 100 plain / 101 enc | yes | protobuf commands |
+| 1 | `CH_PROTOBUF` | `TRANSPORT_CHANNEL_PB` | 100 plain / 101 enc | yes (101) | protobuf commands |
 | 2 | `CH_DATA` | `TRANSPORT_CHANNEL_MASS` | 104 | no | mass data, file push ([channels.md](channels.md), [ota.md](ota.md)) |
 | 3 | `CH_MASS_VOICE` | `TRANSPORT_CHANNEL_MASS_VOICE` | 103 | no | voice/audio payloads |
 | 4 | `CH_FILE_SENSOR` | `TRANSPORT_CHANNEL_FILE_SENSOR` | 107 `TYPE_CAPTURE` | no | sensor files |

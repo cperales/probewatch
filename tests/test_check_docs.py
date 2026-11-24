@@ -40,6 +40,17 @@ def test_size_drift_is_reported_and_fixed(tmp_path: Path) -> None:
     assert main(["--fix"], root=root) == 0
 
 
+def test_index_rows_with_other_link_text(tmp_path: Path) -> None:
+    root = _repo(tmp_path, {"a.md": "x" * 3000}, {})
+    (root / "docs" / "README.md").write_text(
+        "# Index\n\n| Document | Size | Description |\n|---|---|---|\n"
+        "| [The A page](a.md) | 2 KB | page |\n"
+    )
+    assert index_problems(root) == ["index: a.md is listed as 2 KB, is 3 KB (--fix)"]
+    assert fix_index(root) == 1
+    assert "| [The A page](a.md) | 3 KB | page |" in (root / "docs" / "README.md").read_text()
+
+
 def test_unlisted_and_missing_pages(tmp_path: Path) -> None:
     root = _repo(tmp_path, {"a.md": "a", "b.md": "b"}, {"a.md": 0, "gone.md": 1})
     assert index_problems(root) == [

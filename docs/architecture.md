@@ -57,7 +57,7 @@ result shapes on purpose:
 | `set_keys(watch_nonce)` | `derive_keys()` → `dec_key`, `enc_key`, `dec_nonce`, `enc_nonce` |
 | `ccm_encrypt(data, counter)` | AES-CCM, auth step 3 only |
 | `encrypt_v2` / `decrypt_v2` | AES-CTR, a fresh cipher per message (`_ctr`) |
-| `encrypted` | set after auth; `send_command` reads it |
+| `encrypted` | set after auth; nothing reads it — `send_command` decides on `type == 1` |
 
 `derive_keys()` is HKDF written out with `hmac_sha256()` rather than `cryptography`'s HKDF, to
 match the Java code exactly. The algorithms: [session.md](session.md).

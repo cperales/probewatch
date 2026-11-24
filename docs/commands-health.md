@@ -5,9 +5,9 @@ app encodes a command, and types 2 and 4, are in [commands.md](commands.md).
 
 Source: [apk 9.8.348i] unless tagged.
 
-A **✓** in the Watch column marks ids that answered on the watch and **✗** ids it rejects;
-the responses, firmware and dates are in [commands-tested.md](commands-tested.md). Everything
-else is "read from the app" and still needs a hardware check.
+A **✓** in the Watch column marks ids the watch answered or acted on and **✗** ids it rejects;
+results, firmware and dates are in [commands-tested.md](commands-tested.md). Unmarked ids are
+"read from the app" unless that page records a probe.
 
 ## Type 7 — notifications and calls
 
@@ -49,13 +49,13 @@ else is "read from the app" and still needs a hardware check.
 | 8/21 | vitality reminder get | |
 | 8/22 | vitality reminder set | |
 | 8/29 | sport status | ✓ |
-| 8/30 | phone-sport pre-request config | |
+| 8/30 | phone-sport pre-request config | silent |
 | 8/35 | vitality score | ✓ |
 | 8/38–40 | curse records/prediction/notify flags | |
 | 8/41 | sleep segment write-back | |
 | 8/42 | goals get | ✓ |
 | 8/43 | goals set | |
-| 8/45 | start real-time heart rate | ✓ |
+| 8/45 | start real-time heart rate; starts the `8/47` stream | ✓ |
 | 8/46 | stop real-time heart rate | |
 | 8/48–52 | sport/report variants, vitality upload, sport config | |
 | 8/57 | track get | |

@@ -19,7 +19,7 @@ HEADING = re.compile(r"^#+ (.*)$", re.MULTILINE)
 FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
 
 # `| [page.md](page.md) | 7 KB | ...` rows of docs/README.md; sizes are round(bytes / 1024).
-INDEX_ROW = re.compile(r"^(\| \[([\w.-]+\.md)\]\(\2\) \| )(\d+)( KB \|)", re.MULTILINE)
+INDEX_ROW = re.compile(r"^(\| \[[^\]]+\]\(([\w.-]+\.md)\) \| )(\d+)( KB \|)", re.MULTILINE)
 
 # AGENTS.md "Legal and provenance": these words misdescribe interoperability work.
 BANNED = re.compile(r"\b(?:bypass|unlock|jailbreak|crack|hack)\w*", re.IGNORECASE)

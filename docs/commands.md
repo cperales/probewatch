@@ -7,9 +7,9 @@ decompiled method.
 
 Source: [apk 9.8.348i] unless tagged.
 
-A **✓** in the Watch column marks ids that answered on the watch and **✗** ids it rejects;
-the responses, firmware and dates are in [commands-tested.md](commands-tested.md). Everything
-else is "read from the app" and still needs a hardware check.
+A **✓** in the Watch column marks ids the watch answered or acted on and **✗** ids it rejects;
+results, firmware and dates are in [commands-tested.md](commands-tested.md). Unmarked ids are
+"read from the app" unless that page records a probe.
 
 Notifications, health, alarms and contacts are in [commands-health.md](commands-health.md);
 internal, bind, NFC, media, OTA and debug ids in [commands-internal.md](commands-internal.md).

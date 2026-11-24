@@ -1,8 +1,9 @@
 # Channels 2 and 5 — Capture and Analysis
 
-SPP v2 DATA frames carry a one-byte channel id before the payload. Only channel 1
-(`CH_PROTOBUF`, a `xiaomi.Command`) is decoded. Channels 2 (`CH_DATA`) and 5
-(`CH_ACTIVITY`) are ACKed and then dropped (channel table: [protocol.md](protocol.md#l2-packet-data-payload)).
+SPP v2 DATA frames carry a channel byte and an opcode byte before the payload. Channels 2
+(`CH_DATA`) and 5 (`CH_ACTIVITY`) are ACKed and then dropped (channel table:
+[protocol.md](protocol.md#l2-packet-data-payload)); the client decodes only channel 1
+(`CH_PROTOBUF`, a `xiaomi.Command`) and channel 6 (`CH_OTA`).
 
 This page is the method for finding out what they carry: how to capture, what to capture and
 how to read the result. Findings are at the bottom.
@@ -11,9 +12,10 @@ Source: [hw 2.2.110 2026-11-20] unless tagged.
 
 ## Why the console cannot see them
 
-`--listen` drains `XiaomiWatch.inbox`, which only ever receives channel 1. A frame on any
-other channel produces one line in the `-v` log and is discarded, so the only observability
-is `--capture`, which writes every frame to a file.
+`--listen` drains `XiaomiWatch.inbox`, which only ever receives channel 1; channel 6 is
+handled separately by `_handle_ota`. A frame on any other channel produces one line in the
+`-v` log and is discarded, so for channels 2 and 5 the only observability is `--capture`,
+which writes every frame to a file.
 
 ## Capturing
 

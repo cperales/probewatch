@@ -38,8 +38,9 @@ command returned on the watch: `docs/commands-tested.md`). Fact pages tag their 
 
 ## Recording a finding
 
-Every fact has one home page in `docs/`; other files link to it, and `AGENTS.md` keeps only
-rules. When a hardware run, the APK or the firmware confirms or changes something:
+Every fact has one home page in `docs/`; other docs link to it, and `AGENTS.md` keeps the
+rules and a summary of the client contract. When a hardware run, the APK or the firmware
+confirms or changes something:
 
 1. Find the home page through `docs/README.md`.
 2. `grep` its key terms across `AGENTS.md`, `README.md` and `docs/`. Update the home page with

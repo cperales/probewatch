@@ -27,8 +27,9 @@ Source: [apk 9.8.348i] (`com.xiaomi.wearable.transport.layerl1`, see
 
 ## What the client does
 
-The same rules, from the constants on `XiaomiWatch`: `TX_WINDOW` 32, `REMOTE_WINDOW` 4,
-`SEND_TIMEOUT` 10 s, `CUM_ACK_TIMEOUT` 0.5 s, `ACK_THRESHOLD` = `TX_WINDOW * 2 // 3` = 21.
+The same rules, from the constants on `XiaomiWatch`: `TX_WINDOW` 32, `SEND_TIMEOUT` 10 s,
+`CUM_ACK_TIMEOUT` 0.5 s, `ACK_THRESHOLD` = `TX_WINDOW * 2 // 3` = 21. `REMOTE_WINDOW` 4 is
+kept for parity with the app's `SAR_DEFAULT_TX_WIN_REMOTE`, but the client does not enforce it.
 
 - Unacked frames sit in `_sent` in insertion order, so a cumulative ACK releases the right
   frames across the 8-bit seq wrap.
