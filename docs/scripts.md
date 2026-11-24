@@ -94,7 +94,8 @@ uv run python src/xiaomi_client.py [MAC] [--channel 1] [--key-file PATH] [-v]
 
 Without `--send`, `--ota-require` or `--listen` it only connects and authenticates; nothing
 is queried by default. A basic read is
-`--send 2 2 --send 2 1` (device info, battery).
+`--send 2 2 --send 2 1` (device info, battery). The id catalogue is in
+[commands.md](commands.md).
 
 The `-v` flag is the first thing to use on protocol failures — it shows every frame on the
 wire.

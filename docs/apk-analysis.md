@@ -121,6 +121,12 @@ client never negotiates it, but the peer may speak it on older firmware.
 - The L1 `CMD_L1STOP_*` flow lets us close a session cleanly instead of dropping RFCOMM.
 - **Not** recovered: the protobuf schemas. The app's watch messages are generated with a
   nano/javalite runtime that strips field and message names, so `strings` on the DEX yields
-  no `miscSettingGet`/`widgetScreens`-style identifiers. Enumerating command ids means
-  reading generated classes in the app module (`com.xiaomi.fitness.*`, largely obfuscated) —
-  a separate, heavier pass.
+  no `miscSettingGet`/`widgetScreens`-style identifiers.
+- **Command ids: recovered.** The app's envelope is `defpackage.t1i` — `Command` with field 1
+  type, field 2 subtype and a payload oneof (the same shape as `proto/xiaomi.proto`). Feature
+  code builds it as `new t1i(); c = TYPE; d = SUBTYPE` and sends it through
+  `DeviceContact.call` → `ContactTaskQueue` → `IMiWearCoreClient.call`. Tracing `t1i.<init>`
+  gives 379 construction sites; the literal pairs are catalogued in
+  [commands.md](commands.md) and [commands-internal.md](commands-internal.md), with the
+  watch-confirmed ones marked. The payloads themselves are still the vendored protos: the ids
+  are app facts, the field numbers come from Gadgetbridge.
