@@ -111,7 +111,7 @@ A separate v1 path still exists for the same types: IV is `deviceIV(8) ‖ 00000
 and for encrypted type 101 the ciphertext is prefixed with 2 bytes of that counter. Our
 client never negotiates it, but the peer may speak it on older firmware.
 
-## What this unlocks, and what it does not
+## What this enables, and what it does not
 
 - Channels 4, 5, 6, 7, 8 and 9 are reachable with the transport we already have; they need
   a payload schema (the ARQ above is implemented). `OTA` (6) and `FILE_FITNESS` (5) are the

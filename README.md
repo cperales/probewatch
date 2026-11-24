@@ -9,7 +9,7 @@ identifiers are not in the repository; they live in the git-ignored `secrets/` d
 
 ProbeWatch is a personal, unofficial hobby project: reverse engineering done on a watch I own, to
 use it from Linux in the spirit of [Gadgetbridge](https://codeberg.org/Freeyourgadget/Gadgetbridge).
-It reads state and talks to the device; it does not unlock or modify it.
+It reads state and talks to the device; it does not modify it.
 
 The repository is its own agent harness: `make check` (ruff, doc-link check, pytest, a
 context-size budget, `compileall`) needs no watch and is exactly what CI runs. Hardware
