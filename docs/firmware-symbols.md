@@ -16,10 +16,11 @@ below was found this way; `name_literal` records the anchor so each row is re-ch
 
 ## Provider caveat
 
-Derived with REA → Ghidra 12.2 using generic `ARM:LE:32:v7` (no Cortex-M language in this
-provider increment). Entry points are reliable; some function bodies are mis-bounded.
-Re-import with an SF32LB5x SVD / Cortex-M language to split the merged region at
-`0x200100d0`.
+Re-imported with Ghidra 12.2 under the Cortex-M language `ARM:LE:32:Cortex` (ARMv8-M /
+Cortex-M33; 923 functions). Entry points and bodies are reliable. The `0x200100d0` region
+did **not** split into three functions: it is one function, `dfu_ctrl_reset_handler`, whose
+callees `dfu_offline_install` and `dfu_reboot_install` the compiler inlined (one prologue at
+`0x200100d0`, one epilogue at `0x200104da`).
 
 ## HCPU symbols
 
@@ -29,24 +30,25 @@ The vector table is at the image start (`SP = 0x20036970`, reset `0x20000909`).
 | Symbol | Entry | Body | Confidence | Name literal | Group |
 |---|---|---|---|---|---|
 | `dfu_decompress` | `0x20010654` | `0x20010654`–`0x20010753` | high | `0x2002d11f` | dfu |
-| `dfu_offline_install` | `0x200100d0` | `0x200100d0`–`0x200104dd` | medium | `0x2002cf8c` | dfu |
+| `dfu_ctrl_reset_handler` | `0x200100d0` | `0x200100d0`–`0x200104dd` | high | `0x2002cfa0` | dfu |
 | `dfu_image_install_flash_lite` | `0x20011840` | `0x20011840`–`0x20011cc9` | high | `0x2002d0d4` | dfu |
 | `dfu_offline_header_alloc` | `0x20011d98` | `0x20011d98`–`0x20011e77` | high | `0x2002cf09` | dfu |
 | `dfu_ota_bootloader_ram_run_set` | `0x20011ed8` | `0x20011ed8`–`0x20011f45` | high | `0x2002cfca` | dfu |
 | `dfu_packet_erase_flash` | `0x20011fac` | `0x20011fac`–`0x20012007` | high | `0x2002d019` | dfu |
 | `fal_partition_write` | `0x200137b8` | `0x200137b8`–`0x20013875` | high | `0x2002cdd1` | fal |
+| `rt_rtc_control` | `0x2001bcb4` | `0x2001bcb4`–`0x2001bd8f` | high | `0x2001bda0` | rtc |
 
 ### Notes
 
-- `dfu_offline_install` (`0x200100d0`) is a **merged region**: the entry also contains
-  `dfu_reboot_install` and `dfu_ctrl_reset_handler`. Re-import with a Cortex-M language
-  to split the boundaries.
-- `dfu_reboot_install` — ref site `0x20010210`, name literal `0x20010528`; inside merged
-  `FUN_200100d0`, true entry unresolved.
-- `dfu_ctrl_reset_handler` — ref site `0x200104a0`, name literal `0x2002cfa0`; inside merged
-  `FUN_200100d0`, true entry unresolved.
-- `rt_rtc_control` — ref site `0x2001bcc0`, name literal `0x2001bda0`; confidence low
-  because the ref site is not inside a Ghidra-defined function. Needs manual disassembly.
+- `dfu_ctrl_reset_handler` (`0x200100d0`) is a **single function**, not a merged region: the
+  entry `RT_ASSERT(env->mode == DFU_CTRL_OTA_MODE)` at `0x200100e0` carries its own
+  `__func__`, repeated at the `0x200104a0` assert.
+- `dfu_offline_install` — name literal `0x2002cf8c`, `__func__` logged at `0x200101b6` and
+  `0x20010298`; **inlined** into `dfu_ctrl_reset_handler`, so it has no independent entry.
+- `dfu_reboot_install` — name literal `0x20010528` (string embedded in code), `__func__`
+  logged at `0x20010210`; **inlined** into `dfu_ctrl_reset_handler`, no independent entry.
+- `rt_rtc_control` — resolved to `FUN_2001bcb4`; the `adr r1,[0x2001bda0]` at `0x2001bcc0`
+  is its own `RT_ASSERT(dev != RT_NULL)` name.
 
 ## LCPU symbols
 
@@ -79,11 +81,9 @@ the importable formats:
   `ImportSymbolsScript.py` format) and `scripts/apply_symbols.py` (prints `set_address_name`
   commands for REA).
 - `uv run python scripts/apply_symbols.py` — prints `set_address_name(image, addr, name)`
-  for every symbol with a non-null entry (21 commands: 7 HCPU + 14 LCPU).
+  for every symbol with a non-null entry (22 commands: 8 HCPU + 14 LCPU).
 
 ## Next
 
-1. Re-import HCPU under a proper **SF32LB5x / Cortex-M** language to split the merged region
-   at `0x200100d0` and resolve `rt_rtc_control`.
-2. Re-import LCPU with `GHIDRA_HEADLESS_MAXMEM` raised to handle the full 5.5 MB image.
-3. Systematic `__func__` xref naming over the full HCPU image (Phase C7).
+1. Re-import LCPU with `GHIDRA_HEADLESS_MAXMEM` raised to handle the full 5.5 MB image.
+2. Systematic `__func__` xref naming over the full HCPU image (Phase C7).
