@@ -22,7 +22,7 @@ short contract. `make sizes` tracks their cost (~3.8 bytes/token).
 | [ota.md](ota.md) | 6 KB | Official app's firmware update: version check, download, channel-6 protocol |
 | [firmware.md](firmware.md) | 8 KB | The watch package: two images (HCPU/LCPU), unpacking, DFU, load map |
 | [firmware-symbols.md](firmware-symbols.md) | 7 KB | HCPU symbol map: method, confidence rules, DFU/FAL/FlashDB cluster |
-| [firmware-symbols-kernel.md](firmware-symbols-kernel.md) | 7 KB | HCPU kernel group: IPC, timers, device framework, BSim cross-check |
+| [firmware-symbols-kernel.md](firmware-symbols-kernel.md) | 8 KB | HCPU kernel group: IPC, timers, device framework, BSim cross-check |
 | [firmware-symbols-drivers.md](firmware-symbols-drivers.md) | 5 KB | HCPU drivers, serial/I2C, LCD/GPU and logging symbols |
 | [firmware-symbols-lcpu.md](firmware-symbols-lcpu.md) | 5 KB | LCPU symbol table: load map, caveat, addresses, call sites |
 | [lcpu.md](lcpu.md) | 4 KB | LCPU firmware: SPP/protobuf/mass code, load map, login FSM |

@@ -37,8 +37,12 @@ decompiler signatures (BSim) against a compiled SDK slice.
 
 | Confidence | Meaning |
 |---|---|
-| high | assert call site and the line number lands inside the same-named source function, or the BSim match agrees at significance ≥ 10 |
-| medium | assert call site only: the source is not in the public SDK (prebuilt `sifli_lib` or app code), so the line cannot be checked |
+| high | two ways: the assert call site plus the line landing inside the same-named source function, or a decompiler-signature match whose callees, callers and size all agree |
+| medium | one way: the assert call site without the source check (the source is not public — prebuilt `sifli_lib` or app code), or a signature match without call-graph agreement |
+
+Eighteen kernel rows have **no string anchor at all**: they were recovered from the
+signature match plus the call graph and are listed on
+[firmware-symbols-kernel.md](firmware-symbols-kernel.md#recovered-from-the-call-graph).
 
 Two exclusions are deliberate. Functions carrying **two different** `__func__` literals are not
 named from the anchor (`0x200100d0`, `0x200166e8`, `0x200157d8`, `0x2001c680`): an inlined

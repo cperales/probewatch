@@ -1,27 +1,27 @@
 # Firmware symbols — the RT-Thread kernel group
 
 Symbol names for the RT-Thread kernel, IPC, timer and device-framework functions in the
-**HCPU** image. The method, the confidence rules and the DFU/flash cluster are on
-[firmware-symbols.md](firmware-symbols.md); the drivers are on
-[firmware-symbols-drivers.md](firmware-symbols-drivers.md). Everything here is static
-analysis; nothing was flashed or executed and the watch is not contacted. Legal framing is
+**HCPU** image. The method and the DFU/flash cluster are on
+[firmware-symbols.md](firmware-symbols.md); drivers are on
+[firmware-symbols-drivers.md](firmware-symbols-drivers.md). Static analysis only; nothing was
+flashed or executed and the watch is not contacted. Legal framing is
 [README.md](../README.md#legal).
 
 Source: [fw 2.2.111] unless tagged.
 
-## Why this group is trustworthy
+## Evidence
 
-These are the functions the SiFli SDK shares verbatim with upstream RT-Thread, so the group
-got a second, independent check. A kernel slice of the SDK (tag v2.3.6, 198 functions,
-built with `gcc-arm-none-eabi` 14.2) was matched against the image with decompiler
-signatures (BSim vectors). Of 41 matches at significance ≥ 10, 32 carry the same name as the
-`__func__` anchor — 78% precision, rising to 93% above significance 20. The disagreements are
-sibling confusions (`rt_device_write` matched `rt_device_read`), so the anchor decides and the
-match is recorded as corroboration.
+Most rows carry a `__func__` anchor: the literal is the function's own name, loaded into `r1`
+and passed to the assert handler with a `__LINE__` immediate from inside that function. The
+kernel is shared verbatim with upstream RT-Thread, so a compiled slice of the SDK (v2.3.6,
+198 functions) was also matched by decompiler signature: 78% of the anchored matches agree at
+significance ≥ 10, 93% above 20.
 
-Exact-hash matching (Ghidra FID) was tried and is not usable here: the best similarity on a
-correct pair is 0.869 and none reaches 0.999, because the firmware's compiler differs. The
-`body` column is the contiguous range from the entry.
+The second table has **no string anchor**. Those rows come from that match plus the **call
+graph**: the firmware function must call the same named functions as its candidate and be
+called by the same set, at a similar body size. `rt_calloc` calls `rt_malloc` + `rt_memset`
+and `print_number` has one caller, both exactly as upstream; candidates whose graph disagreed
+were dropped.
 
 ## Kernel and IPC
 
@@ -82,13 +82,34 @@ correct pair is 0.869 and none reaches 0.999, because the firmware's compiler di
 | `rt_timer_start` | `0x2001d970` | `0x2001d970–0x2001da5d` | high | `0x2002de87` |
 | `rt_timer_stop` | `0x2001dac0` | `0x2001dac0–0x2001db1b` | high | `0x2002de3d` |
 
+## Recovered from the call graph
+
+No name literal by construction.
+
+| Symbol | Entry | Body | Confidence |
+|---|---|---|---|
+| `_rt_scheduler_stack_check` | `0x2000dfa8` | `0x2000dfa8–0x2000e007` | medium |
+| `_rt_timer_remove` | `0x2000e118` | `0x2000e118–0x2000e129` | high |
+| `print_number` | `0x20017000` | `0x20017000–0x20017145` | high |
+| `rt_calloc` | `0x20017ae0` | `0x20017ae0–0x20017afd` | high |
+| `rt_device_register` | `0x20018480` | `0x20018480–0x200184ab` | high |
+| `rt_exit_critical` | `0x200188c4` | `0x200188c4–0x200188f5` | high |
+| `rt_ipc_list_resume_all` | `0x2001a32c` | `0x2001a32c–0x2001a353` | high |
+| `rt_memcpy` | `0x2001ab08` | `0x2001ab08–0x2001ab5d` | medium |
+| `rt_memset` | `0x2001ab5e` | `0x2001ab5e–0x2001ab9f` | high |
+| `rt_event_init` | `0x2001b1dc` | `0x2001b1dc–0x2001b211` | high |
+| `rt_object_detach` | `0x2001b6a8` | `0x2001b6a8–0x2001b6e3` | high |
+| `rt_object_get_type` | `0x2001b728` | `0x2001b728–0x2001b741` | high |
+| `rt_schedule_insert_thread` | `0x2001be20` | `0x2001be20–0x2001be6d` | high |
+| `rt_schedule_remove_thread` | `0x2001be90` | `0x2001be90–0x2001bedd` | high |
+| `rt_strnlen` | `0x2001cc38` | `0x2001cc38–0x2001cc4d` | high |
+| `rt_thread_create` | `0x2001ce8c` | `0x2001ce8c–0x2001cecb` | high |
+| `rt_timer_init` | `0x2001d8fc` | `0x2001d8fc–0x2001d93d` | high |
+| `rt_vsnprintf` | `0x2001db30` | `0x2001db30–0x2001dc3f` | high |
 ### Notes
 
-- `rt_sem_take` (`0x2001c0fc`) and `rt_mutex_take` (`0x2001b368`) are the two blocking paths
-  every IPC wait goes through; their asserts are the `__func__` anchors.
-- `plug_holes` (`0x20016efc`) is the RT-Thread small-memory allocator's coalescing helper, a
-  static function that still logs its own name.
-- `_rt_thread_init` (`0x2000e054`) is the internal initialiser behind `rt_thread_init`; the
-  public wrapper is a separate function at `0x2001d154`.
-- `rt_charge_register` and `rt_hw_watchdog_register` are marked medium: present in the 2.2.111
-  image, not in the v2.3.6 source tree, so their line numbers cannot be checked.
+- `rt_schedule_insert_thread` (`0x2001be20`) and `rt_schedule_remove_thread` (`0x2001be90`)
+  are the same size and near-identical; the callers decide. Insert is called by
+  `rt_thread_resume`/`control`/`timeout`, remove by `rt_thread_suspend`/`delete`/`control`.
+- `rt_exit_critical` (`0x200188c4`) is 50 bytes; the sibling `rt_enter_critical` is 22 bytes
+  upstream, so size separates them.
