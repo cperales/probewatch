@@ -13,9 +13,16 @@ Source: [fw 2.2.111] unless tagged.
 
 The public SDK does not carry all of this code — parts live in the prebuilt `sifli_lib`
 archive and parts are board or app code — so the `__LINE__` cross-check only fires where the
-source is public. Every row still has the assert-site evidence: the literal is the function's
-own `__func__`, loaded into `r1` and passed to the assert handler with a line immediate from
-inside that function. Rows marked medium did not resolve against v2.3.6 source.
+source is public. Rows with a name literal have the assert-site evidence: the literal is the
+function's own `__func__`, loaded into `r1` and passed to the assert handler with a line
+immediate from inside that function. Rows marked medium did not resolve against v2.3.6 source.
+
+The rows with **no** name literal were recovered from the wide SDK slice: the firmware function
+must call, and be called by, the same named functions as its candidate, at a similar size. The
+LCD group is where this pays off — `api_lcd_get_pixel`, `api_lcd_draw_rect` and
+`api_lcd_set_window` each call `send_msg_to_lcd_task`, as upstream, and `lcd_display_on`,
+`lcd_display_off` and `lcd_set_brightness` join `draw_core`/`api_lcd_control` through
+`disable_low_power`. Rows with neither graph agreement nor a literal are marked medium.
 
 ## Board drivers
 
@@ -98,3 +105,8 @@ inside that function. Rows marked medium did not resolve against v2.3.6 source.
   `b.w 0x200179e4`, which is why the literal is its own name with no local call.
 - `lcpu2hcpu_notification_callback` (`0x200153f4`) is the HCPU side of the inter-core
   mailbox documented in [firmware.md](firmware.md).
+- The timer rows are all `drv_hwtimer.c`: `bf0_gptimer_init2` registers the device
+  (`rt_device_hwtimer_register`), `timer_start`/`timer_counter_get` are the GPT operations and
+  `lp_timer_start` the LPTIM one. `HAL_Delay` is the strongest of them: its decompiler
+  signature is identical to the slice's (similarity 1.000) and its only callee is a shared
+  delay helper, as upstream's `HAL_Delay_us`.

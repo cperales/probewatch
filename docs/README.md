@@ -24,7 +24,7 @@ short contract. `make sizes` tracks their cost (~3.8 bytes/token).
 | [firmware-symbols.md](firmware-symbols.md) | 7 KB | HCPU symbol map: method, confidence rules, DFU/OTA and RTC cluster |
 | [firmware-symbols-flash.md](firmware-symbols-flash.md) | 6 KB | HCPU FAL and FlashDB KV store symbols, recovered by call graph |
 | [firmware-symbols-kernel.md](firmware-symbols-kernel.md) | 8 KB | HCPU kernel group: IPC, timers, device framework, BSim cross-check |
-| [firmware-symbols-drivers.md](firmware-symbols-drivers.md) | 7 KB | HCPU drivers, serial/I2C, LCD/GPU and logging symbols |
+| [firmware-symbols-drivers.md](firmware-symbols-drivers.md) | 8 KB | HCPU drivers, serial/I2C, LCD/GPU and logging symbols |
 | [firmware-symbols-lcpu.md](firmware-symbols-lcpu.md) | 5 KB | LCPU symbol table: load map, caveat, addresses, call sites |
 | [lcpu.md](lcpu.md) | 4 KB | LCPU firmware: SPP/protobuf/mass code, load map, login FSM |
 | [audio.md](audio.md) | 6 KB | HFP audio, SCO quirks, verification, workarounds |
