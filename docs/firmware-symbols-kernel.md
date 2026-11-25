@@ -1,27 +1,24 @@
 # Firmware symbols — the RT-Thread kernel group
 
 Symbol names for the RT-Thread kernel, IPC, timer and device-framework functions in the
-**HCPU** image. The method and the DFU/flash cluster are on
-[firmware-symbols.md](firmware-symbols.md); drivers are on
-[firmware-symbols-drivers.md](firmware-symbols-drivers.md). Static analysis only; nothing was
-flashed or executed and the watch is not contacted. Legal framing is
-[README.md](../README.md#legal).
+**HCPU** image. Method: [firmware-symbols.md](firmware-symbols.md); FAL/FlashDB:
+[firmware-symbols-flash.md](firmware-symbols-flash.md). Static analysis only; the watch is not
+contacted. Legal: [README.md](../README.md#legal).
 
 Source: [fw 2.2.111] unless tagged.
 
 ## Evidence
 
-Most rows carry a `__func__` anchor: the literal is the function's own name, loaded into `r1`
-and passed to the assert handler with a `__LINE__` immediate from inside that function. The
-kernel is shared verbatim with upstream RT-Thread, so a compiled slice of the SDK (v2.3.6,
-198 functions) was also matched by decompiler signature: 78% of the anchored matches agree at
-significance ≥ 10, 93% above 20.
+Most rows carry a `__func__` anchor: the name literal is loaded into `r1` and passed to the
+assert handler with a `__LINE__` immediate from inside that function. The kernel is shared
+verbatim with upstream RT-Thread, so a compiled SDK slice (v2.3.6, 198 functions) was also
+matched by decompiler signature: 78% of the anchored matches agree at significance ≥ 10, 93%
+above 20.
 
 The second table has **no string anchor**. Those rows come from that match plus the **call
 graph**: the firmware function must call the same named functions as its candidate and be
-called by the same set, at a similar body size. `rt_calloc` calls `rt_malloc` + `rt_memset`
-and `print_number` has one caller, both exactly as upstream; candidates whose graph disagreed
-were dropped.
+called by the same set, at a similar body size. Candidates whose graph disagreed were
+dropped.
 
 ## Kernel and IPC
 
@@ -84,10 +81,12 @@ were dropped.
 
 ## Recovered from the call graph
 
-No name literal by construction.
+No name literal by construction. All but `rt_strlen` come from the kernel slice; that one
+was placed by the wider slice, from its seven FlashDB callers.
 
 | Symbol | Entry | Body | Confidence |
 |---|---|---|---|
+| `rt_strlen` | `0x20000db0` | `0x20000db0–0x20000dbd` | medium |
 | `_rt_scheduler_stack_check` | `0x2000dfa8` | `0x2000dfa8–0x2000e007` | medium |
 | `_rt_timer_remove` | `0x2000e118` | `0x2000e118–0x2000e129` | high |
 | `print_number` | `0x20017000` | `0x20017000–0x20017145` | high |
@@ -109,7 +108,9 @@ No name literal by construction.
 ### Notes
 
 - `rt_schedule_insert_thread` (`0x2001be20`) and `rt_schedule_remove_thread` (`0x2001be90`)
-  are the same size and near-identical; the callers decide. Insert is called by
-  `rt_thread_resume`/`control`/`timeout`, remove by `rt_thread_suspend`/`delete`/`control`.
+  are same-sized twins; only the callers separate them (resume/control/timeout vs
+  suspend/delete/control).
 - `rt_exit_critical` (`0x200188c4`) is 50 bytes; the sibling `rt_enter_critical` is 22 bytes
   upstream, so size separates them.
+- `rt_strlen` (`0x20000db0`) is 14 bytes; the slice links `strlen` externally, so the name
+  agrees by role, not by symbol.

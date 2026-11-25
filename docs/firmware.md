@@ -93,7 +93,8 @@ at the image start (`SP = 0x20036970`, reset `0x20000909`; prologue sets MSP the
 Auto-analysis (Ghidra 12.2, `ARM:LE:32:Cortex`) finds **923 functions / 794 strings**. Function
 names are not in the image, but RT-Thread logs its own `__func__`: the bare `name` literal is
 referenced only from inside the function that bears it, so an xref to it names the function.
-143 carry such an anchor; 110 are named in [firmware-symbols.md](firmware-symbols.md).
+143 carry such an anchor; 110 are named from it and 63 more from an SDK slice match
+(**183** in all; [firmware-symbols.md](firmware-symbols.md)).
 
 The DFU/OTA installer (the watch side of the `ota_type = 2` update) is the densest named
 cluster: `dfu_offline_install[_lite]`, `dfu_offline_header_alloc`, `dfu_img_install[_flash]`,
@@ -102,8 +103,7 @@ cluster: `dfu_offline_install[_lite]`, `dfu_offline_header_alloc`, `dfu_img_inst
 boot_to_user_fw, update_prog_info, error_handle}`, `dfu_protocol_session_close`, `dfu_env`
 (`DFU_CTRL_OTA_MODE`), plus a `dfu_gui_*` on-watch progress screen. FAL/FlashDB are present as
 expected (`fal_init`, `fal_partition_{read,write,erase}`, `fdb_kvdb_init`).
-Full HCPU symbol table with addresses and confidence is in
-[firmware-symbols.md](firmware-symbols.md); the LCPU map is in
+The full HCPU table is in [firmware-symbols.md](firmware-symbols.md); the LCPU map in
 [firmware-symbols-lcpu.md](firmware-symbols-lcpu.md).
 
 ## The BLE/SPP stack lives on the LCPU

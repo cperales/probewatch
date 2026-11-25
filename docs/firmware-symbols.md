@@ -14,7 +14,8 @@ Where a symbol lives by cluster:
 |---|---|
 | kernel, IPC, timers, device framework (`rt_*`, `plug_holes`) | [firmware-symbols-kernel.md](firmware-symbols-kernel.md) |
 | board drivers, serial/I2C/UART, GUI (`sifli_*`, `drv_*`, `lvsf_*`) | [firmware-symbols-drivers.md](firmware-symbols-drivers.md) |
-| DFU/OTA, FAL/FlashDB, RTC | this page |
+| FAL and the FlashDB KV store (`fal_*`, `fdb_*`, `*_kv`) | [firmware-symbols-flash.md](firmware-symbols-flash.md) |
+| DFU/OTA and RTC | this page |
 | Bluetooth/SPP/protobuf | [firmware-symbols-lcpu.md](firmware-symbols-lcpu.md) |
 
 ## Method
@@ -32,17 +33,20 @@ assert handler (`0x200179e4`) next to a `__LINE__` immediate. A data string such
 device name is the first argument and lands in `r0`; those are rejected.
 
 Two independent checks back the rows: the `__LINE__` immediate must fall inside a same-named
-function in the SiFli-SDK source (v2.3.6), and the kernel cluster was cross-matched with
-decompiler signatures (BSim) against a compiled SDK slice.
+function in the SiFli-SDK source (v2.3.6), and the whole image was cross-matched with
+decompiler signatures (BSim) against a compiled slice of that SDK. The slice covers the
+RT-Thread kernel, the SoC drivers, FAL/FlashDB and the DFU middleware — 504 functions — so the
+comparison reaches beyond the kernel into the flash and display code.
 
 | Confidence | Meaning |
 |---|---|
 | high | two ways: the assert call site plus the line landing inside the same-named source function, or a decompiler-signature match whose callees, callers and size all agree |
 | medium | one way: the assert call site without the source check (the source is not public — prebuilt `sifli_lib` or app code), or a signature match without call-graph agreement |
 
-Eighteen kernel rows have **no string anchor at all**: they were recovered from the
-signature match plus the call graph and are listed on
-[firmware-symbols-kernel.md](firmware-symbols-kernel.md#recovered-from-the-call-graph).
+Sixty-three rows have **no string anchor at all**: they were recovered from the signature match
+and the call graph, and each page marks them as such
+([kernel](firmware-symbols-kernel.md#recovered-from-the-call-graph),
+[flash](firmware-symbols-flash.md)).
 
 Two exclusions are deliberate. Functions carrying **two different** `__func__` literals are not
 named from the anchor (`0x200100d0`, `0x200166e8`, `0x200157d8`, `0x2001c680`): an inlined
@@ -59,12 +63,12 @@ The `0x200100d0` region did **not** split: it is one function, `dfu_ctrl_reset_h
 callees `dfu_offline_install` and `dfu_reboot_install` the compiler inlined (one prologue at
 `0x200100d0`, one epilogue at `0x200104da`).
 
-## DFU, flash and RTC
+## DFU, OTA and RTC
 
 | Symbol | Entry | Body | Confidence | Name literal |
 |---|---|---|---|---|
-| `dfu_offline_install` | — | `—` | medium | `0x2002cf8c` |
-| `dfu_reboot_install` | — | `—` | medium | `0x20010528` |
+| `dfu_offline_install` | — | — | medium | `0x2002cf8c` |
+| `dfu_reboot_install` | — | — | medium | `0x20010528` |
 | `dfu_app_launch` | `0x2000fc84` | `0x2000fc84–0x2000fd83` | medium | `0x2002c6a8` |
 | `dfu_ctrl_reset_handler` | `0x200100d0` | `0x200100d0–0x200104dd` | high | `0x2002cfa0` |
 | `dfu_ctrl_update_prog_info` | `0x200105f0` | `0x200105f0–0x2001061b` | medium | `0x20010638` |
@@ -78,17 +82,9 @@ callees `dfu_offline_install` and `dfu_reboot_install` the compiler inlined (one
 | `dfu_offline_header_alloc` | `0x20011d98` | `0x20011d98–0x20011e77` | high | `0x2002cf09` |
 | `dfu_ota_bootloader_ram_run_set` | `0x20011ed8` | `0x20011ed8–0x20011f45` | high | `0x2002cfca` |
 | `dfu_packet_erase_flash` | `0x20011fac` | `0x20011fac–0x20012007` | high | `0x2002d019` |
-| `_fdb_init_ex` | `0x2000d3bc` | `0x2000d3bc–0x2000d55d` | high | `0x2002c897` |
-| `_fdb_read_status` | `0x2000d920` | `0x2000d920–0x2000d975` | high | `0x2002cba6` |
-| `_fdb_write_status` | `0x2000d9ac` | `0x2000d9ac–0x2000da3f` | high | `0x2002cbb7` |
-| `fal_partition_erase` | `0x200134e0` | `0x200134e0–0x2001359b` | high | `0x2002cdbd` |
-| `fal_partition_read` | `0x20013670` | `0x20013670–0x2001372d` | high | `0x2002cdaa` |
-| `fal_partition_write` | `0x200137b8` | `0x200137b8–0x20013875` | high | `0x2002cdd1` |
-| `fdb_kv_get_blob` | `0x20013940` | `0x20013940–0x20013a6f` | medium | `0x20013acc` |
-| `fdb_kv_set_blob` | `0x20013adc` | `0x20013adc–0x20013bb3` | medium | `0x20013be8` |
-| `fdb_kvdb_init` | `0x20013c00` | `0x20013c00–0x20013d51` | high | `0x2002cb66` |
-| `read_kv` | `0x2001723c` | `0x2001723c–0x2001744b` | high | `0x2002cb74` |
+| `drv_get_timestamp` | `0x2001427c` | `0x2001427c–0x20014305` | high | — |
 | `rt_rtc_control` | `0x2001bcb4` | `0x2001bcb4–0x2001bd8f` | high | `0x2001bda0` |
+| `set_rtc_time_stamp` | `0x2002145c` | `0x2002145c–0x200214d7` | high | — |
 
 ### Notes
 
@@ -103,6 +99,10 @@ callees `dfu_offline_install` and `dfu_reboot_install` the compiler inlined (one
   `RT_ASSERT(dev != RT_NULL)` name.
 - `dfu_packet_erase_flash` is referenced from two functions (`0x20010894` and `0x20011fac`).
   The row is the second: the first is a short pre-flight check that logs the same name.
+- `drv_get_timestamp` (`0x2001427c`) and `set_rtc_time_stamp` (`0x2002145c`) are the two
+  helpers `rt_rtc_control` dispatches to, named from the slice match: both have exactly one
+  caller, `rt_rtc_control`, as in the SDK source, and `drv_get_timestamp` matches the slice
+  size exactly (138 B).
 
 ## Pipeline
 
@@ -113,5 +113,5 @@ the per-row site evidence and the naming passes. Two scripts regenerate the impo
   `ImportSymbolsScript.py` format) and `scripts/apply_symbols.py` (prints `set_address_name`
   commands for REA).
 - `uv run python scripts/apply_symbols.py` — prints `set_address_name(image, addr, name)`
-  for every symbol with a non-null entry (129 commands: 118 HCPU + 11 LCPU; the LCPU rows
+  for every symbol with a non-null entry (192 commands: 181 HCPU + 11 LCPU; the LCPU rows
   without an entry are call sites, not functions).
