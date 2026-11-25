@@ -23,6 +23,7 @@ short contract. `make sizes` tracks their cost (~3.8 bytes/token).
 | [firmware.md](firmware.md) | 8 KB | The watch package: two images (HCPU/LCPU), unpacking, DFU, load map |
 | [lcpu.md](lcpu.md) | 4 KB | LCPU firmware: SPP/protobuf/mass code, load map, login FSM |
 | [audio.md](audio.md) | 6 KB | HFP audio, SCO quirks, verification, workarounds |
+| [firmware-upstreams.md](firmware-upstreams.md) | 2 KB | Firmware build bases, published facts and the reuse boundary |
 
 ## Sources
 
@@ -47,11 +48,12 @@ a finding too.
 | Label | Where |
 |---|---|
 | `Byterialab` | [xiaomi-smart-watch-research](https://github.com/Byterialab/xiaomi-smart-watch-research) |
+| `SiFli-SDK` | [OpenSiFli/SiFli-SDK](https://github.com/OpenSiFli/SiFli-SDK) |
 
 ## Quick links
 
 - **Getting started**: [setup.md](setup.md) → [scripts.md](scripts.md)
 - **The watch**: [device.md](device.md) → [commands-tested.md](commands-tested.md)
 - **Understanding the protocol**: [protocol.md](protocol.md) → [session.md](session.md) → [arq.md](arq.md) → [commands.md](commands.md) → [architecture.md](architecture.md)
-- **Sources**: [apk-analysis.md](apk-analysis.md) (the app) → [ota.md](ota.md) → [firmware.md](firmware.md) → [lcpu.md](lcpu.md) (the watch)
+- **Sources**: [apk-analysis.md](apk-analysis.md) (the app) → [ota.md](ota.md) → [firmware.md](firmware.md) → [firmware-upstreams.md](firmware-upstreams.md) (upstreams) → [lcpu.md](lcpu.md) (the watch)
 - **Audio troubleshooting**: [audio.md](audio.md)

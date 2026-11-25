@@ -132,7 +132,7 @@ on the watch, so an image cannot be re-signed from the device [inferred].
    the `ota_type = 2` push in [ota.md](ota.md)), the channel table and the session teardown
    (feeds [channels.md](channels.md)), the protobuf dispatch, and HKDF/AES against
    `src/xiaomi_client.py`.
-2. HCPU: diff the plaintext app against open-source RT-Thread to name the scheduler, drivers,
-   FAL/FlashDB and DFU routines; the installer cluster is already located.
+2. HCPU: diff the plaintext app against the [SiFli-SDK](firmware-upstreams.md) to name the
+   scheduler, drivers, FAL/FlashDB and DFU routines; the installer cluster is already located.
 3. Verify anything claimed on hardware; record measured facts on their topic page
    ("Recording a finding" in `AGENTS.md`).

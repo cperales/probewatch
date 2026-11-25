@@ -179,3 +179,7 @@ repo. `README.md`'s Legal section is the canonical disclaimer: link to it, do no
 AGPL-3.0-or-later. `proto/` is vendored from Gadgetbridge and `src/xiaomi_client.py` is a port
 of its Java SPP/auth classes, so treat new protocol code as derivative work. Unofficial project,
 not affiliated with Xiaomi.
+
+Firmware upstreams (SiFli-SDK Apache-2.0, Byterialab MIT) are recorded in
+`docs/firmware-upstreams.md` (linked from `docs/firmware.md`); reference them, never vendor
+their code here.
