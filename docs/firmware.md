@@ -17,12 +17,10 @@ Source: [fw 2.2.111] unless tagged.
 | Host | `fk-res-abroad-cdn.home.mi.com` |
 | Local | `secrets/firmware/…bin` (git-ignored) |
 
-It was fetched without the account API. Mi Fitness logs the whole `LatestVersion` object
-(including `fullPackageUrl` and `md5`) to `logcat` under the `CheckUpdate` tag, and that URL
-is a signed CDN link (query-string `Expires`/`Signature`), so `curl` is enough. The app's own
-copy lands in `/sdcard/Android/data/com.xiaomi.wearable/files/Download/<model>/<md5>` and can
-be `adb pull`ed. `scripts/fetch_firmware_url.py` is the direct-API route, which needs the
-`miothealth` cookie (see [ota.md](ota.md)).
+Fetched without the account API: Mi Fitness logs the `LatestVersion` object (`fullPackageUrl`,
+`md5`) to `logcat` under the `CheckUpdate` tag, and that URL is a signed CDN link, so `curl` is
+enough; the app's own copy lands in its `files/Download/<model>/<md5>`. The direct-API route is
+`scripts/fetch_firmware_url.py` (needs the `miothealth` cookie, [ota.md](ota.md)).
 
 ## What it is
 
@@ -96,15 +94,20 @@ referenced only from inside the function that bears it, so an xref to it names t
 143 carry such an anchor; 110 are named from it and 63 more from an SDK slice match
 (**183** in all; [firmware-symbols.md](firmware-symbols.md)).
 
-The DFU/OTA installer (the watch side of the `ota_type = 2` update) is the densest named
-cluster: `dfu_offline_install[_lite]`, `dfu_offline_header_alloc`, `dfu_img_install[_flash]`,
-`dfu_image_install_flash_lite`, `dfu_packet_erase_flash`, `dfu_decompress`,
-`dfu_ota_bootloader_ram_run_set`, `dfu_reboot_install`, `dfu_ctrl_{reset_handler,
-boot_to_user_fw, update_prog_info, error_handle}`, `dfu_protocol_session_close`, `dfu_env`
-(`DFU_CTRL_OTA_MODE`), plus a `dfu_gui_*` on-watch progress screen. FAL/FlashDB are present as
-expected (`fal_init`, `fal_partition_{read,write,erase}`, `fdb_kvdb_init`).
-The full HCPU table is in [firmware-symbols.md](firmware-symbols.md); the LCPU map in
-[firmware-symbols-lcpu.md](firmware-symbols-lcpu.md).
+### Pointer density
+
+`uv run python scripts/pointer_density.py` counts the 32-bit words that address the image
+itself: 1,737 of 47,558 (3.7%) at `0x20000000`, 974 odd (Thumb code pointers) and 763 even
+(data), spanning `0x20000000`–`0x2002e714`. The count stays within 90% of its peak for
+candidate bases `0x20000000`–`0x2000f000` and collapses outside it (12, 21 and 0 self-pointers
+one image length below, one MB above, and 1 MB below). So it brackets the base to about the
+image size and no better: it rules out gross errors, and the vector table fixes the exact
+value. It is inconclusive for the LCPU — 91,525 of its words point into its own block and
+13,325 into HCPU SRAM, so every base in the sweep stays above 60% of the peak; that image's
+base and `-0x26000` relocation come from the vector table ([lcpu.md](lcpu.md)).
+
+The DFU/OTA installer (`ota_type = 2`) is the densest named cluster, plus the FAL/FlashDB
+calls it makes; the rows are on [firmware-symbols.md](firmware-symbols.md).
 
 ## The BLE/SPP stack lives on the LCPU
 
@@ -133,6 +136,4 @@ on the watch, so an image cannot be re-signed from the device [inferred].
 
 1. LCPU mining, string-guided (started in [lcpu.md](lcpu.md)): the mass-channel receiver, the
    channel table and session teardown, the protobuf dispatch, and HKDF/AES.
-2. HCPU: diff the plaintext app against the [SiFli-SDK](firmware-upstreams.md) to name the
-   scheduler, drivers, FAL/FlashDB and DFU routines.
-3. Verify anything claimed on hardware; record measured facts on their topic page.
+2. Verify anything claimed on hardware; record measured facts on their topic page.

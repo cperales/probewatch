@@ -92,19 +92,15 @@ uv run python src/xiaomi_client.py [MAC] [--channel 1] [--key-file PATH] [-v]
 | `--capture [PATH]` | Record every frame, both directions, to NDJSON (default `captures/<timestamp>.ndjson`) |
 | `-v` | Verbose: trace every TX/RX frame in hex |
 
-Without `--send`, `--ota-require` or `--listen` it only connects and authenticates; nothing
-is queried by default. A basic read is
-`--send 2 2 --send 2 1` (device info, battery). The id catalogue is in
-[commands.md](commands.md), and what the watch answered in [commands-tested.md](commands-tested.md).
-
-The `-v` flag is the first thing to use on protocol failures — it shows every frame on the
-wire.
+Without `--send`, `--ota-require` or `--listen` it only connects and authenticates. A basic
+read is `--send 2 2 --send 2 1` (device info, battery); the id catalogue is in
+[commands.md](commands.md) and what the watch answered in [commands-tested.md](commands-tested.md).
+`-v` traces every frame and is the first thing to use on protocol failures.
 
 Channel 6 (OTA) speaks the app's own `0x5A` framing: `--ota-require` sends the read-only
-`REQUIRE` handshake and prints the decoded page size, interval and timeout. That is the
-`ota_type = 1` engine; the Redmi Watch 5 Active reports `ota_type = 2` and updates over the
-mass channel, so expect no answer on channel 6. See [ota.md](ota.md) and
-[firmware.md](firmware.md).
+`REQUIRE` handshake and prints the decoded page size, interval and timeout. That engine is
+`ota_type = 1`; this watch reports `ota_type = 2` and updates over the mass channel, so expect
+no answer on channel 6 ([ota.md](ota.md)).
 
 ### `src/probe_extra.py`
 
@@ -208,3 +204,14 @@ uv run python scripts/extract_firmware.py [IMAGE] [--out DIR]
 ```
 
 See [firmware.md](firmware.md) and [lcpu.md](lcpu.md).
+
+### `scripts/pointer_density.py`
+
+Counts the words that address the image itself over candidate load bases; a wrong base
+collapses the count. Read-only.
+
+```bash
+uv run python scripts/pointer_density.py [--image hcpu|lcpu] [--shift OFFSET]
+```
+
+Result: [firmware.md](firmware.md#load-map-hcpu-verified).
