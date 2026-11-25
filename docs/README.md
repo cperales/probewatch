@@ -21,7 +21,7 @@ short contract. `make sizes` tracks their cost (~3.8 bytes/token).
 | [apk-analysis.md](apk-analysis.md) | 4 KB | Official app: provenance, where the protocol lives, what it gave |
 | [ota.md](ota.md) | 6 KB | Official app's firmware update: version check, download, channel-6 protocol |
 | [firmware.md](firmware.md) | 8 KB | The watch package: two images (HCPU/LCPU), unpacking, DFU, load map |
-| [firmware-symbols.md](firmware-symbols.md) | 6 KB | HCPU and LCPU symbol table: addresses, confidence, name literals |
+| [firmware-symbols.md](firmware-symbols.md) | 8 KB | HCPU and LCPU symbol table: addresses, confidence, name literals |
 | [lcpu.md](lcpu.md) | 4 KB | LCPU firmware: SPP/protobuf/mass code, load map, login FSM |
 | [audio.md](audio.md) | 6 KB | HFP audio, SCO quirks, verification, workarounds |
 | [firmware-upstreams.md](firmware-upstreams.md) | 2 KB | Firmware build bases, published facts and the reuse boundary |

@@ -21,9 +21,14 @@ MERGED_JSON = ROOT / "secrets" / "ghidra" / "symbols.json"
 
 
 def main() -> int:
-    # Load HCPU (the current symbols.json)
+    # Load HCPU: either the merged layout (images.hcpu) or the original
+    # HCPU-only file (image + symbols). Running this twice must be a no-op.
     with HCPU_JSON.open() as f:
-        hcpu = json.load(f)
+        hcpu_doc = json.load(f)
+    if "images" in hcpu_doc:
+        hcpu = hcpu_doc["images"]["hcpu"]
+    else:
+        hcpu = {**hcpu_doc["image"], "symbols": hcpu_doc["symbols"]}
 
     # Load LCPU
     with LCPU_JSON.open() as f:
@@ -38,29 +43,9 @@ def main() -> int:
             "apply_symbols.py against a fresh carve. See README.md for the "
             "load map and method."
         ),
-        "method": hcpu.get("method", ""),
-        "provider_caveat": hcpu.get("provider_caveat", ""),
-        "images": {
-            "hcpu": {
-                "model": hcpu["image"]["model"],
-                "firmware": hcpu["image"]["firmware"],
-                "source_bin": hcpu["image"]["source_bin"],
-                "source_bin_md5": hcpu["image"]["source_bin_md5"],
-                "carve": hcpu["image"]["carve"],
-                "carved_sha256": hcpu["image"]["carved_sha256"],
-                "load_base": hcpu["image"]["load_base"],
-                "arch": hcpu["image"]["arch"],
-                "vector_table": hcpu["image"]["vector_table"],
-                "symbols": hcpu["symbols"],
-            },
-            "lcpu": {
-                "image": lcpu["image"],
-                "load_base": lcpu["load_base"],
-                "extraction": lcpu["extraction"],
-                "relocation": lcpu["relocation"],
-                "symbols": lcpu["symbols"],
-            },
-        },
+        "method": hcpu_doc.get("method", ""),
+        "provider_caveat": hcpu_doc.get("provider_caveat", ""),
+        "images": {"hcpu": hcpu, "lcpu": lcpu},
     }
 
     MERGED_JSON.write_text(json.dumps(merged, indent=2) + "\n")

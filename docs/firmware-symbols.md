@@ -17,10 +17,17 @@ below was found this way; `name_literal` records the anchor so each row is re-ch
 ## Provider caveat
 
 Re-imported with Ghidra 12.2 under the Cortex-M language `ARM:LE:32:Cortex` (ARMv8-M /
-Cortex-M33; 923 functions). Entry points and bodies are reliable. The `0x200100d0` region
-did **not** split into three functions: it is one function, `dfu_ctrl_reset_handler`, whose
-callees `dfu_offline_install` and `dfu_reboot_install` the compiler inlined (one prologue at
-`0x200100d0`, one epilogue at `0x200104da`).
+Cortex-M33). Both images now use it: HCPU at `0x20000000` (923 functions) and the pre-patched
+LCPU at `0x12000000` with a 4 GB heap (16,901 functions at import). Entry points and bodies are
+reliable. The `0x200100d0` region did **not** split into three functions: it is one function,
+`dfu_ctrl_reset_handler`, whose callees `dfu_offline_install` and `dfu_reboot_install` the
+compiler inlined (one prologue at `0x200100d0`, one epilogue at `0x200104da`).
+
+For LCPU the "Non-Returning Functions - Discovered" pass is disabled before analysis: the
+image carries no ROM, so thunks to `0x2006xxxx` are unresolvable, and the pass marked them
+non-returning. Callers then stopped at the call — `hkdf_sha256_expand` ended at `0x121cf8b9`
+instead of its real `bx lr` at `0x121cf910`. Functions reached only through a data word (thread
+entries) are not created by auto-analysis; they were created from their verified prologues.
 
 ## HCPU symbols
 
@@ -55,22 +62,37 @@ The vector table is at the image start (`SP = 0x20036970`, reset `0x20000909`).
 LCPU runs from **`0x12000000`** (extracted `image1`, 5,578,752 B). Absolute pointers in the
 image are stored shifted: **`true = stored - 0x26000`** (PC-relative code is already correct).
 
-| Symbol | Entry | Confidence | Evidence |
-|---|---|---|---|
-| `login_fsm_timeout_handler` | `0x1200390e` | high | logs `'login_fsm_timeout_handler'`; sets `[inst+0x20]=3` and frees the login session |
-| `login_fsm_timer_arm` | `0x12003b5e` | high | `FUN_12157c04(inst, 10000)` — 10 s timeout while state waits in `WAIT_APP_VERIFY`/`WAIT_APP_CONFIRM` |
-| `hkdf_auth_call` | `0x12003d7c` | high | info literal `0x12003ff8` → `'miwear-auth'`; 64-byte output; salt = 2 × 16-byte randoms; IKM = 16-byte secret |
-| `spp_connected_handler` | `0x12032e64` | high | logs `'Spp connected:channel=%d'`; stores the channel byte; registers `'spp_connect'` with event `0x0e` |
-| `spp_disconnected_handler` | `0x12032f28` | high | logs `'Spp disconnected_channel:%d'`; registers `'spp_disconnect'` with event `0x0e` |
-| `spp_ble_thread_init` | `0x120362a0` | medium | name `'spp_ble_d'`, stack `0x1000`, priority 20; entry literal `0x1205c35d` minus `0x26000` = `0x1203635d` |
-| `channel_msh_command` | `0x12049a80` | medium | MSH probe/read/enable/disable; debug console, not the production path |
-| `protobuf_queue_init` | `0x1203311c` | high | creates `protobuf_preprocess_queue` (4 B × 0x50 slots) and the `mi_pb` thread (0x5000 stack, priority 19) |
-| `protobuf_dispatch_thread` | `0x12258624` | high | `rt_mq_recv(q,&msg,4,-1)` then TBH jump tables on u16 type (0..10) and u16 subtype (0xc402..0xc427); entry literal `0x1227e625` minus `0x26000` |
-| `l2_channel_dispatcher` | `0x1215a9c8` | high | switch on channel 1..7 (jump table) routing PB/MASS/OTA/NETWORK; SAR string table at `0x1215aab0` |
-| `mass_file_header_check` | `0x12173a14` | high | on header event: requires state `0x20`, clears a 0x140-byte buffer, logs `mass_file_bin_header`; compares first word to `0xafcdefad` |
-| `send_msg_to_protobuf_thread` | `0x121a08fc` | high | 4-byte `rt_mq_send` wrapper; name literal `0x121a092c` |
-| `hkdf_sha256_expand` | `0x121cf810` | high | 32-byte blocks, ciphertext counter, assert `'okm_size < 255 * sizeof(t)'` |
-| `hkdf_bind_call` | `0x1212b1d2` | medium | info literal `0x1212b40c` → `'miwear-bind'` (companion binding, not used by the client) |
+Imported from the pre-patched image at base `0x12000000` under `ARM:LE:32:Cortex`, 4 GB heap,
+block `0x12000000`–`0x12551fff`, 16,901 functions at import. Bodies below are the Cortex
+bounds; three rows are **call sites**, not function entries (`entry` empty).
+
+| Symbol | Entry | Body | Confidence | Evidence |
+|---|---|---|---|---|
+| `login_fsm_timeout_handler` | `0x1200390e` | `0x1200390e`–`0x12003975` | high | logs `'login_fsm_timeout_handler'`; sets `[inst+0x20]=3` and frees the login session; entry word stored at `0x120038c0` |
+| `login_fsm_timer_arm` | — | inside `0x12003a74` | medium | call site `0x12003b5e`: `FUN_12157c04(inst, 10000)` arms the 10 s timeout in `WAIT_APP_VERIFY`/`WAIT_APP_CONFIRM` |
+| `hkdf_auth_call` | — | inside `0x12003a74` | medium | call site `0x12003d7c`: info literal `0x12003ff8` → `'miwear-auth'`; 64-byte output |
+| `hkdf_sha256_expand` | `0x121cf810` | `0x121cf810`–`0x121cf911` | high | 32-byte blocks, ciphertext counter, assert `'okm_size < 255 * sizeof(t)'`; ends `bx lr` at `0x121cf910` |
+| `hkdf_bind_call` | — | inside `0x1212af24` | medium | call site `0x1212b1d2`: info literal `0x1212b40c` → `'miwear-bind'` (companion binding) |
+| `spp_connected_handler` | `0x12032e64` | `0x12032e64`–`0x12032ed7` | high | logs `'Spp connected:channel=%d'`; stores the channel byte; registers `'spp_connect'` with event `0x0e` |
+| `spp_disconnected_handler` | `0x12032f28` | `0x12032f28`–`0x12032f9b` | high | logs `'Spp disconnected_channel:%d'`; registers `'spp_disconnect'` with event `0x0e` |
+| `spp_ble_thread_init` | `0x120362a0` | `0x120362a0`–`0x120362ff` | high | name `'spp_ble_d'`, 4 KB stack, priority 20; entry word `0x120362a1` stored at `0x1249a42c` |
+| `channel_msh_command` | `0x12049a78` | `0x12049a78`–`0x12049ba3` | high | MSH probe/read/enable/disable; debug console, not the production path |
+| `protobuf_queue_init` | `0x1203311c` | `0x1203311c`–`0x1203317b` | high | creates `protobuf_preprocess_queue` (4 B × `0x50`) and the `mi_pb` thread (`0x5000` stack, priority 19) |
+| `protobuf_dispatch_thread` | `0x12258624` | `0x12258624`–`0x12258bb3` | high | `rt_mq_recv(q,&msg,4,-1)` then TBH jump tables on u16 type (0..10) and u16 subtype (`0xc402`..`0xc427`); entry word stored at `0x120331b8` |
+| `l2_channel_dispatcher` | `0x1215a9c8` | `0x1215a9c8`–`0x1215aaa9` | high | switch on channel 1..7 routing PB/MASS/OTA/NETWORK; SAR string table at `0x1215aab0` |
+| `mass_file_header_check` | `0x12173a14` | `0x12173a14`–`0x12174353` | high | header event: state `0x20`, clears a `0x140`-byte buffer, logs `mass_file_bin_header`, checks the first word against `0xafcdefad` |
+| `send_msg_to_protobuf_thread` | `0x121a08fc` | `0x121a08fc`–`0x121a0921` | high | 4-byte `rt_mq_send` wrapper; name literal `0x121a092c` |
+
+### Notes
+
+- `login_fsm_timer_arm`, `hkdf_auth_call` and `hkdf_bind_call` are **call sites** inside
+  `FUN_12003a74` (login FSM state handler) and `FUN_1212af24` (bind routine); they are not
+  exported as functions.
+- `channel_msh_command`: the earlier entry `0x12049a80` was 8 bytes into the prologue; the
+  function starts at `0x12049a78` (`push {r4-r8,lr}`).
+- `spp_ble_thread_init`, `protobuf_queue_init` and `protobuf_dispatch_thread` are referenced
+  only by data words, so auto-analysis left them undefined; they were created from their
+  verified prologues.
 
 ## Pipeline
 
@@ -81,9 +103,8 @@ the importable formats:
   `ImportSymbolsScript.py` format) and `scripts/apply_symbols.py` (prints `set_address_name`
   commands for REA).
 - `uv run python scripts/apply_symbols.py` — prints `set_address_name(image, addr, name)`
-  for every symbol with a non-null entry (22 commands: 8 HCPU + 14 LCPU).
+  for every symbol with a non-null entry (19 commands: 8 HCPU + 11 LCPU).
 
 ## Next
 
-1. Re-import LCPU with `GHIDRA_HEADLESS_MAXMEM` raised to handle the full 5.5 MB image.
-2. Systematic `__func__` xref naming over the full HCPU image (Phase C7).
+1. Systematic `__func__` xref naming over the full HCPU image (Phase C7).

@@ -177,11 +177,15 @@ def run_headless(
     base: int,
     maxmem: str,
     do_analysis: bool,
+    pre_scripts: list[str] | None = None,
+    script_path: Path | None = None,
 ) -> int:
     """Invoke Ghidra ``analyzeHeadless`` for one image; return the exit code.
 
     ``project_dir`` is the Ghidra project directory; its parent is the project
-    location and its basename is the project name.
+    location and its basename is the project name. ``pre_scripts`` run before
+    auto-analysis (they can toggle analyzers); ``script_path`` is where Ghidra
+    looks them up.
     """
     GHIDRA_PROJECTS.mkdir(parents=True, exist_ok=True)
 
@@ -199,6 +203,10 @@ def run_headless(
         LANGUAGE,
         "-overwrite",
     ]
+    if pre_scripts and script_path is not None:
+        cmd += ["-scriptPath", str(script_path)]
+        for name in pre_scripts:
+            cmd += ["-preScript", name]
     if not do_analysis:
         cmd.append("-noanalysis")
 
@@ -236,6 +244,18 @@ def main() -> int:
         "--no-analysis",
         action="store_true",
         help="Skip auto-analysis (import-only, for a quick smoke test)",
+    )
+    parser.add_argument(
+        "--script-path",
+        default=str(GHIDRA_DIR / "scripts"),
+        help="Ghidra script directory for --pre-script (default: secrets/ghidra/scripts)",
+    )
+    parser.add_argument(
+        "--pre-script",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Ghidra script to run before auto-analysis (repeatable)",
     )
     args = parser.parse_args()
 
@@ -293,31 +313,50 @@ def main() -> int:
     if args.only in ("both", "hcpu"):
         print("\n--- HCPU ---")
         rc_hcpu = run_headless(
-            hcpu_proj, hcpu_path, HCPU_LOAD_BASE, args.maxmem, not args.no_analysis
+            hcpu_proj,
+            hcpu_path,
+            HCPU_LOAD_BASE,
+            args.maxmem,
+            not args.no_analysis,
+            args.pre_script,
+            Path(args.script_path),
         )
         print(f"HCPU import {'OK' if rc_hcpu == 0 else f'FAILED (exit {rc_hcpu})'}")
 
     if args.only in ("both", "lcpu"):
         print("\n--- LCPU ---")
         rc_lcpu = run_headless(
-            lcpu_proj, lcpu_path, LCPU_LOAD_BASE, args.maxmem, not args.no_analysis
+            lcpu_proj,
+            lcpu_path,
+            LCPU_LOAD_BASE,
+            args.maxmem,
+            not args.no_analysis,
+            args.pre_script,
+            Path(args.script_path),
         )
         print(f"LCPU import {'OK' if rc_lcpu == 0 else f'FAILED (exit {rc_lcpu})'}")
 
     # --- Record what was produced ---
-    summary = {
-        "language": LANGUAGE,
-        "maxmem": args.maxmem,
-        "hcpu": {
+    # With --only, keep the other image's block from the previous summary
+    # instead of writing nulls over a verified import.
+    summary_path = GHIDRA_DIR / "import_summary.json"
+    previous = json.loads(summary_path.read_text()) if summary_path.exists() else {}
+
+    hcpu_block = (
+        {
             "source": "image0 (header stripped)",
             "image": str(hcpu_path.relative_to(ROOT)),
             "bytes": len(hcpu),
             "base": f"0x{HCPU_LOAD_BASE:x}",
             "sha256": hcpu_sha,
             "project": str(hcpu_proj.relative_to(ROOT)) if rc_hcpu == 0 else None,
-            "exit": rc_hcpu if args.only in ("both", "hcpu") else None,
-        },
-        "lcpu": {
+            "exit": rc_hcpu,
+        }
+        if args.only in ("both", "hcpu")
+        else previous.get("hcpu", {})
+    )
+    lcpu_block = (
+        {
             "source": "image1 (DEFLATE record stream)",
             "image": str(lcpu_path.relative_to(ROOT)),
             "bytes": len(lcpu),
@@ -326,10 +365,17 @@ def main() -> int:
             "patched": args.lcpu_patch,
             "patched_words": lcpu_count,
             "project": str(lcpu_proj.relative_to(ROOT)) if rc_lcpu == 0 else None,
-            "exit": rc_lcpu if args.only in ("both", "lcpu") else None,
-        },
+            "exit": rc_lcpu,
+        }
+        if args.only in ("both", "lcpu")
+        else previous.get("lcpu", {})
+    )
+    summary = {
+        "language": LANGUAGE,
+        "maxmem": args.maxmem,
+        "hcpu": hcpu_block,
+        "lcpu": lcpu_block,
     }
-    summary_path = GHIDRA_DIR / "import_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2) + "\n")
     print(f"\nsummary  {summary_path.relative_to(ROOT)}")
 
