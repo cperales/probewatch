@@ -12,7 +12,6 @@ Usage:
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,14 +36,10 @@ def apply(data: dict) -> None:
             if entry is None:
                 continue
             # Convert hex string to int
-            if isinstance(entry, str):
-                addr = int(entry, 16)
-            else:
-                addr = entry
+            addr = int(entry, 16) if isinstance(entry, str) else entry
             print(f"set_address_name({img_key!r}, 0x{addr:x}, {s['name']!r})")
 
 
 if __name__ == "__main__":
     data = load_symbols(SYMBOLS_JSON)
     apply(data)
-

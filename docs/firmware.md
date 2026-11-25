@@ -102,6 +102,8 @@ cluster: `dfu_offline_install[_lite]`, `dfu_offline_header_alloc`, `dfu_img_inst
 boot_to_user_fw, update_prog_info, error_handle}`, `dfu_protocol_session_close`, `dfu_env`
 (`DFU_CTRL_OTA_MODE`), plus a `dfu_gui_*` on-watch progress screen. FAL/FlashDB are present as
 expected (`fal_init`, `fal_partition_{read,write,erase}`, `fdb_kvdb_init`).
+Full symbol table with addresses and confidence is in
+[firmware-symbols.md](firmware-symbols.md).
 
 ## The BLE/SPP stack lives on the LCPU
 
@@ -128,11 +130,8 @@ on the watch, so an image cannot be re-signed from the device [inferred].
 
 ## Next
 
-1. LCPU mining, string-guided (started in [lcpu.md](lcpu.md)): the mass-channel receiver (feeds
-   the `ota_type = 2` push in [ota.md](ota.md)), the channel table and the session teardown
-   (feeds [channels.md](channels.md)), the protobuf dispatch, and HKDF/AES against
-   `src/xiaomi_client.py`.
+1. LCPU mining, string-guided (started in [lcpu.md](lcpu.md)): the mass-channel receiver, the
+   channel table and session teardown, the protobuf dispatch, and HKDF/AES.
 2. HCPU: diff the plaintext app against the [SiFli-SDK](firmware-upstreams.md) to name the
-   scheduler, drivers, FAL/FlashDB and DFU routines; the installer cluster is already located.
-3. Verify anything claimed on hardware; record measured facts on their topic page
-   ("Recording a finding" in `AGENTS.md`).
+   scheduler, drivers, FAL/FlashDB and DFU routines.
+3. Verify anything claimed on hardware; record measured facts on their topic page.
