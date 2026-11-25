@@ -91,8 +91,8 @@ at the image start (`SP = 0x20036970`, reset `0x20000909`; prologue sets MSP the
 Auto-analysis (Ghidra 12.2, `ARM:LE:32:Cortex`) finds **923 functions / 794 strings**. Function
 names are not in the image, but RT-Thread logs its own `__func__`: the bare `name` literal is
 referenced only from inside the function that bears it, so an xref to it names the function.
-143 carry such an anchor; 110 are named from it and 63 more from an SDK slice match
-(**183** in all; [firmware-symbols.md](firmware-symbols.md)).
+143 carry such an anchor; 110 are named from it and 64 more from an SDK slice match
+(**184** in all; [firmware-symbols.md](firmware-symbols.md)).
 
 ### Pointer density
 

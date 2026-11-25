@@ -43,7 +43,7 @@ comparison reaches beyond the kernel into the flash and display code.
 | high | two ways: the assert call site plus the line landing inside the same-named source function, or a decompiler-signature match whose callees, callers and size all agree |
 | medium | one way: the assert call site without the source check (the source is not public — prebuilt `sifli_lib` or app code), or a signature match without call-graph agreement |
 
-Sixty-three rows have **no string anchor at all**: they were recovered from the signature match
+Sixty-four rows have **no string anchor at all**: they were recovered from the signature match
 and the call graph, and each page marks them as such
 ([kernel](firmware-symbols-kernel.md#recovered-from-the-call-graph),
 [flash](firmware-symbols-flash.md)).
@@ -71,7 +71,7 @@ callees `dfu_offline_install` and `dfu_reboot_install` the compiler inlined (one
 | `dfu_reboot_install` | — | — | medium | `0x20010528` |
 | `dfu_app_launch` | `0x2000fc84` | `0x2000fc84–0x2000fd83` | medium | `0x2002c6a8` |
 | `dfu_ctrl_reset_handler` | `0x200100d0` | `0x200100d0–0x200104dd` | high | `0x2002cfa0` |
-| `dfu_ctrl_update_prog_info` | `0x200105f0` | `0x200105f0–0x2001061b` | medium | `0x20010638` |
+| `dfu_ctrl_update_prog_info` | `0x200105f0` | `0x200105f0–0x2001061b` | high | `0x20010638` |
 | `dfu_decompress` | `0x20010654` | `0x20010654–0x20010753` | high | `0x2002d11f` |
 | `dfu_gui_page_init` | `0x20010afc` | `0x20010afc–0x20010b8f` | medium | `0x20010bc8` |
 | `dfu_gui_percent_set_pos` | `0x20010f14` | `0x20010f14–0x20010fa9` | medium | `0x20010fd4` |
@@ -82,6 +82,7 @@ callees `dfu_offline_install` and `dfu_reboot_install` the compiler inlined (one
 | `dfu_offline_header_alloc` | `0x20011d98` | `0x20011d98–0x20011e77` | high | `0x2002cf09` |
 | `dfu_ota_bootloader_ram_run_set` | `0x20011ed8` | `0x20011ed8–0x20011f45` | high | `0x2002cfca` |
 | `dfu_packet_erase_flash` | `0x20011fac` | `0x20011fac–0x20012007` | high | `0x2002d019` |
+| `dfu_sec_init` | `0x20012164` | `0x20012164–0x20012193` | high | — |
 | `drv_get_timestamp` | `0x2001427c` | `0x2001427c–0x20014305` | high | — |
 | `rt_rtc_control` | `0x2001bcb4` | `0x2001bcb4–0x2001bd8f` | high | `0x2001bda0` |
 | `set_rtc_time_stamp` | `0x2002145c` | `0x2002145c–0x200214d7` | high | — |
@@ -103,6 +104,12 @@ callees `dfu_offline_install` and `dfu_reboot_install` the compiler inlined (one
   helpers `rt_rtc_control` dispatches to, named from the slice match: both have exactly one
   caller, `rt_rtc_control`, as in the SDK source, and `drv_get_timestamp` matches the slice
   size exactly (138 B).
+- The DFU middleware now compiles too, so this cluster is cross-checked rather than
+  anchor-only: `dfu_ctrl_reset_handler` agrees on three callees, `dfu_img_install_flash` on
+  three, `dfu_ctrl_update_prog_info` on both callers and its one callee (which lifts it to
+  high). `dfu_sec_init` (`0x20012164`) is the name the extension added. The larger bodies
+  differ from v2.3.6 (`dfu_packet_erase_flash` 92 B vs 52 B), version drift rather than a
+  misidentification.
 
 ## Pipeline
 
@@ -113,5 +120,5 @@ the per-row site evidence and the naming passes. Two scripts regenerate the impo
   `ImportSymbolsScript.py` format) and `scripts/apply_symbols.py` (prints `set_address_name`
   commands for REA).
 - `uv run python scripts/apply_symbols.py` — prints `set_address_name(image, addr, name)`
-  for every symbol with a non-null entry (192 commands: 181 HCPU + 11 LCPU; the LCPU rows
+  for every symbol with a non-null entry (193 commands: 182 HCPU + 11 LCPU; the LCPU rows
   without an entry are call sites, not functions).
