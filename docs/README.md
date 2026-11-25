@@ -20,7 +20,7 @@ short contract. `make sizes` tracks their cost (~3.8 bytes/token).
 | [channels.md](channels.md) | 7 KB | Channels 2 and 5: capture method, trigger matrix, analysis, findings |
 | [apk-analysis.md](apk-analysis.md) | 4 KB | Official app: provenance, where the protocol lives, what it gave |
 | [ota.md](ota.md) | 6 KB | Official app's firmware update: version check, download, channel-6 protocol |
-| [firmware.md](firmware.md) | 7 KB | The watch package: two images (HCPU/LCPU), unpacking, DFU, load map |
+| [firmware.md](firmware.md) | 8 KB | The watch package: two images (HCPU/LCPU), unpacking, DFU, load map |
 | [lcpu.md](lcpu.md) | 4 KB | LCPU firmware: SPP/protobuf/mass code, load map, login FSM |
 | [audio.md](audio.md) | 6 KB | HFP audio, SCO quirks, verification, workarounds |
 
@@ -36,10 +36,17 @@ use a `Source` column. `make lint` checks the syntax.
 | `[apk 9.8.348i]` | from the Mi Fitness app: APK static analysis, or its own logs |
 | `[fw 2.2.111]` | read from the firmware image, static analysis |
 | `[gb]` | from Gadgetbridge or the vendored `.proto` files |
+| `[ext <label>]` | from an external source named in the tag; URLs in [External sources](#external-sources) |
 | `[inferred]` | reasoned, not confirmed |
 
 When a newer firmware changes a result, keep the old line with its own tag: the difference is
 a finding too.
+
+### External sources
+
+| Label | Where |
+|---|---|
+| `Byterialab` | [xiaomi-smart-watch-research](https://github.com/Byterialab/xiaomi-smart-watch-research) |
 
 ## Quick links
 

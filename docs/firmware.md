@@ -29,7 +29,7 @@ be `adb pull`ed. `scripts/fetch_firmware_url.py` is the direct-API route, which 
 Not Linux. It is a **SiFli** package for an **SF32LB5x** part: a small `ad ef cd af` header,
 then two **Cortex-M33** images. The part is dual-core — the **HCPU** runs the RT-Thread
 application/GUI, the **LCPU** runs the low-power and Bluetooth stack. The exact SKU is not
-confirmed.
+confirmed in this image; Byterialab reports SF32LB551 [ext Byterialab].
 
 | Evidence in the image | Layer |
 |---|---|
@@ -114,6 +114,17 @@ The extracted LCPU image holds the stack: `spp_connect`, `rfcomm chl = 0x%x`,
 logic. So the firmware is the **watch side** of the protocol, the APK in
 [apk-analysis.md](apk-analysis.md) is the **phone side**, and live probing arbitrates. What
 the LCPU contains, and the one probe run so far, is in [lcpu.md](lcpu.md).
+
+## Watchface file format
+
+Watchface packages (magic `5A A5 34 12`, a resource table at `0x1C0` of 16-byte
+entries) are reported by Byterialab [ext Byterialab].
+
+## Update verification
+
+The phone checks the download's MD5 (see [ota.md](ota.md)); the watch verifies the image
+against a baked-in RSA-2048 public key and cert chain [ext Byterialab]. The signing key is not
+on the watch, so an image cannot be re-signed from the device [inferred].
 
 ## Next
 

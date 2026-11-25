@@ -29,13 +29,14 @@ BANNED_ALLOWED = re.compile(r'"\w+"|authorize[- ]unlock', re.IGNORECASE)
 BANNED_SKIP_SECTION = ("README.md", "## Legal")
 
 # Source tags, legend in docs/README.md. A tag is not followed by `(`, so link text is skipped.
-TAG = re.compile(r"\[(hw|apk|fw|gb|inferred)((?: [^\]]*)?)\](?!\()")
+TAG = re.compile(r"\[(hw|apk|fw|gb|ext|inferred)((?: [^\]]*)?)\](?!\()")
 VERSION = r"\d+\.\d+\.\d+"
 TAG_ARGS = {
     "hw": re.compile(rf" (?:{VERSION}|\?) \d{{4}}-\d{{2}}-\d{{2}}"),  # ? = not recorded
     "apk": re.compile(rf" {VERSION}\w*"),
     "fw": re.compile(rf" {VERSION}"),
     "gb": re.compile(""),
+    "ext": re.compile(r" \S+"),  # a single-token external-source label (see docs/README.md)
     "inferred": re.compile(""),
 }
 

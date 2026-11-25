@@ -34,7 +34,7 @@ Read `proto/**/*.proto` only for the message you need, and `docs/*.md` on demand
 `docs/README.md` indexes them (scripts and their flags: `docs/scripts.md`; wire format and the
 channel table: `docs/protocol.md`; device facts and firmware history: `docs/device.md`; what each
 command returned on the watch: `docs/commands-tested.md`). Fact pages tag their sources
-(`[hw …]`, `[apk …]`, `[fw …]`, `[gb]`, `[inferred]`; legend in `docs/README.md`).
+(`[hw …]`, `[apk …]`, `[fw …]`, `[gb]`, `[ext …]`, `[inferred]`; legend in `docs/README.md`).
 
 ## Recording a finding
 

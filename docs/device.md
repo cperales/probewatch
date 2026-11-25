@@ -15,7 +15,7 @@ Source: [hw 2.2.110 2026-11-16] unless tagged.
 | Mi Fitness model | `lchz.watch.n65agl` | |
 | MAC, serial, `did` | see `secrets/device.md` (not published) | |
 | OS | Xiaomi HyperOS | |
-| SoC | SiFli SF32LB5x, dual Cortex-M33: HCPU (RT-Thread app) + LCPU (Bluetooth/SPP stack); exact SKU unconfirmed, see [firmware.md](firmware.md) | [fw 2.2.111] |
+| SoC | SiFli SF32LB5x, dual Cortex-M33: HCPU (RT-Thread app) + LCPU (Bluetooth/SPP stack); exact SKU unconfirmed — possibly SF32LB551, see [firmware.md](firmware.md) | [fw 2.2.111] |
 | OTA engine | `ota_type = 2`, general update over the mass channel; see [ota.md](ota.md) | [apk 9.8.348i] |
 
 Other watches of the same model may be in radio range: always check the address against
