@@ -51,8 +51,9 @@ side of the protocol is here; the phone side is [apk-analysis.md](apk-analysis.m
 
 ## Next
 
-1. Patch absolute words by `-0x26000`, re-import the full image, and decode the protobuf
-   type/subtype jump tables (the command ids) and the login FSM transitions.
+1. Decode the protobuf type/subtype jump tables (the command ids) and the login FSM
+   transitions in the re-imported, pre-patched image
+   ([firmware-symbols-lcpu.md](firmware-symbols-lcpu.md)).
 2. Reproduce the app login/verify exchange (from the APK) so the FSM leaves
    `WAIT_APP_VERIFY` — that is what keeps a session alive.
 3. Mass push: match the APK's `MassDataDispatcher` framing to `FUN_12173a14`, then probe.
