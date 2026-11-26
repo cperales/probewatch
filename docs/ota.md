@@ -114,6 +114,18 @@ battery}`, then the SDK mass-channel file push with the device-provided `segment
 that arms it, the watch-side receiver and the read-only probe results are in
 [mass-channel.md](mass-channel.md).
 
+### Watch-side prepare gate
+
+`[fw 2.2.111]` the prepare is gated on **battery level ≥ 30 %**, not on the `version` string.
+The watch-side handler (`app_lv_task_ota_process`, reached via the DFU/OTA app state machine
+and internal message `0x8108`) reads the battery level and, below 30 %, rejects with
+`Low_power_ota_failed` without arming; at or above it shows the DFU confirm popup, arms a
+10 s timer and answers OK. No comparison of `firmwareInstallRequest.version` against the
+installed firmware was found at prepare time. `2/5` also sits outside the main protobuf
+dispatch (its type-2 table runs subtypes 6–46; subtype 5 = `0xc605` is absent), which is why
+an empty `2/5` is ACKed-and-ignored. The `md5` is only checked at the **end** of the channel-2
+push ([mass-channel.md](mass-channel.md)), not at prepare.
+
 ## What this means for ProbeWatch
 
 The ARQ, `CH_OTA` and `OP_READ` are in `src/xiaomi_client.py`, and the `0x5A`/`0A` codec

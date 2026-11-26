@@ -80,8 +80,10 @@ request is ACKed-and-ignored (like the `OP_READ` on channel 2 in
 [channels.md](channels.md#findings)), a complete one gets `errno: 0` (ready), the echoed md5,
 `resumePosition: 0` and **`chunkSize: 4096`** — matching the firmware's 4 KB page. Pushing no
 chunk, the watch self-clears when the session ends. The documented `2/5` reply codes (`0 ok,
-2 already pushed, 3 error, 4 low battery`, [ota.md](ota.md)) stay unverified: reading them
-needs a prepare with a real `version`/`md5`, which arms the firmware path, so it was not sent.
+2 already pushed, 3 error, 4 low battery`, [ota.md](ota.md)) stay unverified on hardware, but
+static analysis confirms the low-battery rejection is real: the prepare handler gates on
+battery ≥ 30 % and rejects below it, and it does not compare the `version` string
+([ota.md](ota.md#watch-side-prepare-gate)).
 
 ## Not in the client
 
