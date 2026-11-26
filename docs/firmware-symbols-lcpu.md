@@ -43,7 +43,7 @@ prologues.
 | `protobuf_queue_init` | `0x1203311c` | `0x1203311c`–`0x1203317b` | high | creates `protobuf_preprocess_queue` (4 B × `0x50`) and the `mi_pb` thread (`0x5000` stack, priority 19) |
 | `protobuf_dispatch_thread` | `0x12258624` | `0x12258624`–`0x12258bb3` | high | `rt_mq_recv(q,&msg,4,-1)` then TBH jump tables on u16 type (0..10) and u16 subtype (`0xc402`..`0xc427`); entry word stored at `0x120331b8` |
 | `l2_channel_dispatcher` | `0x1215a9c8` | `0x1215a9c8`–`0x1215aaa9` | high | switch on channel 1..7 routing PB/MASS/OTA/NETWORK; SAR string table at `0x1215aab0` |
-| `mass_file_header_check` | `0x12173a14` | `0x12173a14`–`0x12174353` | high | header event: state `0x20`, clears a `0x140`-byte buffer, logs `mass_file_bin_header`, checks the first word against `0xafcdefad` |
+| `mass_file_header_check` | `0x12173a14` | `0x12173a14`–`0x12174353` | high | header event: state `0x20`, clears a `0x140`-byte buffer, logs `mass_file_bin_header`, checks word 0 against `0xafcdefad` and byte 6 against `0x02` (version `0x0002026f`); 10× `0x10`-byte sub-file table from offset 8, then 4 KB flash pages in 1 KB sub-writes ([mass-channel.md](mass-channel.md)) |
 | `send_msg_to_protobuf_thread` | `0x121a08fc` | `0x121a08fc`–`0x121a0921` | high | 4-byte `rt_mq_send` wrapper; name literal `0x121a092c` |
 
 ### Notes

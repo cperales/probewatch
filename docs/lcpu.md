@@ -37,7 +37,7 @@ side of the protocol is here; the phone side is [apk-analysis.md](apk-analysis.m
 | Login FSM | `MIWEAR_LOGIN_FSM_START/WAIT_APP_VERIFY/WAIT_APP_CONFIRM`; arms a **10 000 ms** timer (`FUN_12157c04(inst, 10000)` at `0x12003b5e`); on timeout `login_fsm_timeout_handler` (`0x1200390e`) sets state 3, `SCHD_EVT_ADMIN_LOGIN_RESTART` restarts it once, and the second timeout frees the login session and the link |
 | Auth HKDF | `FUN_121cf810` (HKDF-SHA256 expand, 32-byte blocks, `okm_size < 255*32`); the auth call at `0x12003d7c` uses info **`miwear-auth`**, 64-byte output; a second call uses `miwear-bind` |
 | L2 routing | `FUN_1215a9c8` switches on channel 1–7 and routes PB/MASS/OTA/NETWORK to handlers, logging via the SAR table at `0x1215aab0` |
-| Mass-file receiver | `FUN_12173a14`: the header event requires state `0x20`, clears a `0x140`-byte buffer, logs `mass_file_bin_header=…` and validates the first word against **`0xafcdefad`** (the SiFli package magic) |
+| Mass-file receiver | `FUN_12173a14`: the header event requires state `0x20`, clears a `0x140`-byte buffer, logs `mass_file_bin_header=…`, validates word 0 against **`0xafcdefad`** (SiFli magic) and header byte 6 against `0x02` (version word `0x0002026f`); parses up to 10 sub-file records of `0x10` B, then writes 4 KB flash pages in 1 KB sub-writes ([mass-channel.md](mass-channel.md)) |
 | HKDF source | `hkdf_sha256.c` with the `okm_size < 255 * sizeof(t)` assertion |
 
 ## What it explains
@@ -46,8 +46,10 @@ side of the protocol is here; the phone side is [apk-analysis.md](apk-analysis.m
   unused `miwear-bind` path are in [session.md](session.md#key-derivation).
 - **Session lifetime**: the login FSM's 10 s timer, restarted once, is why every session ends
   ~20 s after auth ([session.md](session.md#lifetime)).
-- **Mass channel**: an unsolicited `OP_READ` on channel 2 is valid at L1 but not answered
-  [hw 2.2.111 2026-11-23] ([channels.md](channels.md#findings)).
+- **Mass channel**: the channel-2 receiver, its SiFli package-header checks and what a
+  read-only open returns (`22/0`/`2/5` ACKed-and-ignored unless the request is complete) are
+  in [mass-channel.md](mass-channel.md); an unsolicited `OP_READ` on channel 2 is valid at L1
+  but not answered [hw 2.2.111 2026-11-23] ([channels.md](channels.md#findings)).
 
 ## Next
 
@@ -56,6 +58,8 @@ side of the protocol is here; the phone side is [apk-analysis.md](apk-analysis.m
    ([firmware-symbols-lcpu.md](firmware-symbols-lcpu.md)).
 2. Reproduce the app login/verify exchange (from the APK) so the FSM leaves
    `WAIT_APP_VERIFY` — that is what keeps a session alive.
-3. Mass push: match the APK's `MassDataDispatcher` framing to `FUN_12173a14`, then probe.
+3. ~~Mass push: match the APK's `MassDataDispatcher` framing to `FUN_12173a14`, then probe.~~
+   Done — [mass-channel.md](mass-channel.md): channel 2 = opcode 1 raw bytes, armed by the
+   `22/0` `DataUpload` handshake; a read-only open is ACKed-and-ignored on this watch.
 4. Verify on hardware and record the result on its topic page ("Recording a finding" in
    `AGENTS.md`).
