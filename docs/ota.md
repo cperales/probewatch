@@ -107,10 +107,12 @@ manual screen sends `START`.
 
 ## General path (`ota_type = 2`)
 
-Protobuf `Command{type=2, subtype=5}` `{force, type=15, firmwareVersion, fileMd5}` →
-reply `{0 ok, 2 already pushed, 3 error, 4 low battery}`, then the SDK mass-channel file push
-(`openMassChannel` → `MassDataDispatcher` → `closeMassChannel`) with the device-provided
-`segmentLength`.
+Protobuf `Command{type=2, subtype=5}` → reply `{0 ok, 2 already pushed, 3 error, 4 low
+battery}`, then the SDK mass-channel file push with the device-provided `segmentLength`. The
+`2/5` payload is `System.firmwareInstallRequest{unknown1, unknown2, version, md5}` (reply
+`firmwareInstallResponse{status}`); the channel-2 framing, the `DataUpload` (22/0) handshake
+that arms it, the watch-side receiver and the read-only probe results are in
+[mass-channel.md](mass-channel.md).
 
 ## What this means for ProbeWatch
 

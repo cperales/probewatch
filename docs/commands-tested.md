@@ -85,6 +85,21 @@ Payload rules [gb]: `HourMinute` needs both `hour` and `minute`. `wakeScreen` an
 2 disable, and `DoNotDisturb.status` is 0 enabled / 2 disabled. Tests of `build_command()` pin
 these payload strings.
 
+## Mass channel (`ota_type = 2`)
+
+Read-only open probes; phone Bluetooth off; nothing resembling a firmware write was sent. Full
+write-up in [mass-channel.md](mass-channel.md).
+
+| Command | Result | Source |
+|---|---|---|
+| `22/0` `dataUpload { dataUploadRequest { type: 16 } }`, bare (no `md5sum`/`size`), plain and encrypted | transport ACK, no `DataUploadAck` — ACKed-and-ignored | [hw 2.2.111 2026-11-26] |
+| `22/0` complete: `dataUploadRequest { type: 16 size: 1024 md5sum: <16 B> }` (watchface, no chunk pushed) | `dataUploadAck { errno: 0 resumePosition: 0 chunkSize: 4096 }`, request md5 echoed | [hw 2.2.111 2026-11-26] |
+| `2/5` `system { firmwareInstallRequest { } }` (empty, no version/md5) | transport ACK, no `firmwareInstallResponse`; watch not armed (a follow-up read was normal) | [hw 2.2.111 2026-11-26] |
+
+The receiver answers only after a *complete* `DataUploadRequest` (type + `md5sum` + `size`),
+then replies `errno: 0` with `chunkSize: 4096`; the `2/5` reply codes stay unverified because
+reading them needs a real `version`/`md5`.
+
 ## Next probes
 
 ```bash

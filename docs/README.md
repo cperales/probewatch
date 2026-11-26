@@ -16,17 +16,18 @@ short contract. `make sizes` tracks their cost (~3.8 bytes/token).
 | [commands.md](commands.md) | 4 KB | Command ids from the app: system, settings, watchfaces |
 | [commands-health.md](commands-health.md) | 4 KB | Command ids: notifications, health, alarms, contacts |
 | [commands-internal.md](commands-internal.md) | 5 KB | Command ids: bind, NFC, eSIM, media, apps, mass channel |
-| [commands-tested.md](commands-tested.md) | 6 KB | What each command returned on the watch: reads, writes, live stream |
+| [commands-tested.md](commands-tested.md) | 7 KB | What each command returned on the watch: reads, writes, live stream |
 | [channels.md](channels.md) | 7 KB | Channels 2 and 5: capture method, trigger matrix, analysis, findings |
 | [apk-analysis.md](apk-analysis.md) | 4 KB | Official app: provenance, where the protocol lives, what it gave |
 | [ota.md](ota.md) | 6 KB | Official app's firmware update: version check, download, channel-6 protocol |
+| [mass-channel.md](mass-channel.md) | 5 KB | Channel 2 (`ota_type = 2`): `DataUpload` handshake, chunk framing, watch receiver, read-only open results |
 | [firmware.md](firmware.md) | 8 KB | The watch package: two images (HCPU/LCPU), unpacking, DFU, load map |
 | [firmware-symbols.md](firmware-symbols.md) | 8 KB | HCPU symbol map: method, confidence rules, DFU/OTA and RTC cluster |
 | [firmware-symbols-flash.md](firmware-symbols-flash.md) | 6 KB | HCPU FAL and FlashDB KV store symbols, recovered by call graph |
 | [firmware-symbols-kernel.md](firmware-symbols-kernel.md) | 8 KB | HCPU kernel group: IPC, timers, device framework, BSim cross-check |
 | [firmware-symbols-drivers.md](firmware-symbols-drivers.md) | 8 KB | HCPU drivers, serial/I2C, LCD/GPU and logging symbols |
 | [firmware-symbols-lcpu.md](firmware-symbols-lcpu.md) | 5 KB | LCPU symbol table: load map, caveat, addresses, call sites |
-| [lcpu.md](lcpu.md) | 4 KB | LCPU firmware: SPP/protobuf/mass code, load map, login FSM |
+| [lcpu.md](lcpu.md) | 5 KB | LCPU firmware: SPP/protobuf/mass code, load map, login FSM |
 | [audio.md](audio.md) | 6 KB | HFP audio, SCO quirks, verification, workarounds |
 | [firmware-upstreams.md](firmware-upstreams.md) | 2 KB | Firmware build bases, published facts and the reuse boundary |
 
@@ -60,5 +61,5 @@ a finding too.
 - **Getting started**: [setup.md](setup.md) → [scripts.md](scripts.md)
 - **The watch**: [device.md](device.md) → [commands-tested.md](commands-tested.md)
 - **Understanding the protocol**: [protocol.md](protocol.md) → [session.md](session.md) → [arq.md](arq.md) → [commands.md](commands.md) → [architecture.md](architecture.md)
-- **Sources**: [apk-analysis.md](apk-analysis.md) (the app) → [ota.md](ota.md) → [firmware.md](firmware.md) → [firmware-upstreams.md](firmware-upstreams.md) (upstreams) → [lcpu.md](lcpu.md) (the watch)
+- **Sources**: [apk-analysis.md](apk-analysis.md) (the app) → [ota.md](ota.md) → [mass-channel.md](mass-channel.md) → [firmware.md](firmware.md) → [firmware-upstreams.md](firmware-upstreams.md) (upstreams) → [lcpu.md](lcpu.md) (the watch)
 - **Audio troubleshooting**: [audio.md](audio.md)

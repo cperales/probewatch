@@ -114,7 +114,9 @@ Session lifetime, reconnects and the idle heartbeat, measured in the same captur
 
 Channels 2 and 5 are **not** this firmware's live path: the real-time stream is protobuf on
 channel 1 and a workout adds nothing. One probe extends the negative result to the read verb:
-`OP_READ` on channel 2 is accepted at L1 and ignored by the application. The only untested use
+`OP_READ` on channel 2 is accepted at L1 and ignored by the application. Channel 2 is the mass
+(`ota_type = 2`) transfer path; its framing, the `DataUpload` (22/0) handshake that arms it and
+the read-only open results are in [mass-channel.md](mass-channel.md). The only untested use
 left is bulk transfer — activity files, watchface images, notification icons — and
 `activityRequestFileIds` is the pointer to it. Triggering that needs the phone-side sync sequence (what Mi Fitness sends to make the
 watch produce a file id), which a Linux client cannot guess from the protos alone; it would

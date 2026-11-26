@@ -153,15 +153,16 @@ Built by `defpackage.fz2` (the NFC facade) and `AutoSwitchCardViewModel`.
 | 20/19 | course schedule |
 | 20/20 | third-party blood sugar |
 
-## Type 22 — mass channel control
+## Type 22 — mass channel (`DataUpload`)
 
 | id | Meaning |
 |---|---|
-| 22/0 | mass channel open/close control |
+| 22/0 | `DataUpload`: `DataUploadRequest{type, md5sum, size}` → `DataUploadAck{errno, resumePosition, chunkSize}` (`proto/xiaomi/wear_mass.proto`) |
 | 22/1 | mass "control" (silent upgrade, music transfer) |
 
-This is the family the `ota_type = 2` path uses; see [ota.md](ota.md) and the open work in
-issue #7.
+This is the family the `ota_type = 2` path uses to arm the channel-2 file push; the request
+shape, the channel-2 framing and what a read-only open returns are in
+[mass-channel.md](mass-channel.md) (see also [ota.md](ota.md)).
 
 ## Type 23 — MiLink and AICR
 
