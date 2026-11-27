@@ -1278,6 +1278,16 @@ class TestMassPush:
         assert ack is not None
         assert ack.dataUpload.dataUploadAck.errno == 1
 
+    def test_mass_pause_sends_channel1_frame(self):
+        """mass_pause sends one encrypted channel-1 frame (the 22/1 control)."""
+        w, sent = self._make_watch()
+        w.mass_pause()
+        frames = [parse_v2(f) for f in sent]
+        assert len(frames) == 1
+        assert frames[0][2][0] == CH_PROTOBUF
+        assert frames[0][2][1] == OP_WRITE_ENC
+        assert w.l2_channel == 1  # restored
+
     def test_send_until_space_waits_for_window(self):
         """_send_until_space pumps the link until the TX window opens again."""
         w, sent = self._make_watch()

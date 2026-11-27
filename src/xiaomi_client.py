@@ -963,6 +963,21 @@ class XiaomiWatch:
                 print(f"[mass] reconnect failed ({e}); retrying ...")
                 time.sleep(delay)
 
+    def mass_pause(self) -> bytes | None:
+        """Send the app's ``22/1`` pause control (``DataUpload.dataUploadControl {a=1, b=47}``).
+
+        The vendored proto has no ``DataUpload`` field 3 (the control), so the ``Command`` is
+        hand-built: ``type=22, subtype=1, dataUpload{control{a=1, b=47}}``. Sent encrypted on
+        channel 1, like any non-auth command.
+        """
+        raw = bytes.fromhex("0816" "1001" "c20106" "1a04" "0801" "102f")
+        saved = self.l2_channel
+        self.l2_channel = CH_PROTOBUF
+        try:
+            return self._send_until_space(OP_WRITE_ENC, raw, timeout=5.0)
+        finally:
+            self.l2_channel = saved
+
     def mass_push(
         self,
         data: bytes,
