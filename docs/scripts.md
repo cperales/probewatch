@@ -71,8 +71,7 @@ Requires: phone Bluetooth off, watch advertising.
 
 ### `src/xiaomi_client.py`
 
-Full SPP v2 client: RFCOMM connect → version probe → session negotiation → 3-step HKDF
-authentication → protobuf queries.
+Full SPP v2 client: RFCOMM → version probe → session → 3-step HKDF auth → protobuf queries.
 
 ```bash
 uv run python src/xiaomi_client.py [MAC] [--channel 1] [--key-file PATH] [-v]
@@ -86,21 +85,21 @@ uv run python src/xiaomi_client.py [MAC] [--channel 1] [--key-file PATH] [-v]
 | `--send TYPE SUBTYPE` | Send a command, repeatable; empty body unless `--payload` is given |
 | `--payload TEXT` | `text_format` body for a single `--send` |
 | `--ota-require` | Send the read-only OTA `REQUIRE` handshake on channel 6 and decode the reply |
+| `--mass-push PATH` | Push a firmware file over the mass channel (2); `--fw-version VER` sets the prepare version |
 | `--timeout SECONDS` | Per-command wait for a response (default 8) |
 | `--listen SECONDS` | Print unsolicited channel-1 frames for this long after connecting |
 | `--keepalive SECONDS` | During `--listen`, send a read-only query this often |
 | `--capture [PATH]` | Record every frame, both directions, to NDJSON (default `captures/<timestamp>.ndjson`) |
 | `-v` | Verbose: trace every TX/RX frame in hex |
 
-Without `--send`, `--ota-require` or `--listen` it only connects and authenticates. A basic
-read is `--send 2 2 --send 2 1` (device info, battery); the id catalogue is in
-[commands.md](commands.md) and what the watch answered in [commands-tested.md](commands-tested.md).
-`-v` traces every frame and is the first thing to use on protocol failures.
+Without `--send`, `--ota-require`, `--mass-push` or `--listen` it only connects and
+authenticates. A basic read is `--send 2 2 --send 2 1` (device info, battery); ids in
+[commands.md](commands.md), answers in [commands-tested.md](commands-tested.md).
 
-Channel 6 (OTA) speaks the app's own `0x5A` framing: `--ota-require` sends the read-only
-`REQUIRE` handshake and prints the decoded page size, interval and timeout. That engine is
-`ota_type = 1`; this watch reports `ota_type = 2` and updates over the mass channel, so expect
-no answer on channel 6 ([ota.md](ota.md)).
+Channel 6 is the `ota_type = 1` engine (`--ota-require` probes its `0x5A` handshake). This
+watch is `ota_type = 2` and updates over the mass channel (2): `--mass-push` drives prepare
+`2/5`, `DataUpload` `22/0`, then plaintext chunks ([mass-channel.md](mass-channel.md),
+[ota.md](ota.md)).
 
 ### `src/probe_extra.py`
 

@@ -1139,3 +1139,155 @@ class TestARQStateMachine:
         # And an ACK should have been sent (immediate for payload[0] == 1)
         acks = [f for f in sent_frames if parse_v2(f)[0] == T_ACK]
         assert len(acks) == 1
+
+
+# --------------------------------------------------------------------------- mass push (ota_type = 2)
+
+from xiaomi_client import (  # noqa: E402
+    MASS_UPLOAD_FIRMWARE,
+    mass_chunks,
+    mass_prepare_command,
+    mass_upload_command,
+)
+
+
+class TestMassChunks:
+    """mass_chunks splits a payload into device-sized chunks."""
+
+    def test_exact_split(self):
+        assert mass_chunks(b"12345678", 4) == [b"1234", b"5678"]
+
+    def test_short_last_chunk(self):
+        assert mass_chunks(b"1234567", 4) == [b"1234", b"567"]
+
+    def test_empty(self):
+        assert mass_chunks(b"", 4096) == []
+
+    def test_chunk_larger_than_data(self):
+        assert mass_chunks(b"abc", 4096) == [b"abc"]
+
+
+class TestMassCommands:
+    """The prepare and upload protobufs carry the right fields."""
+
+    def test_prepare_fields(self):
+        cmd = mass_prepare_command("2.2.111", "0" * 32)
+        assert cmd.type == 2 and cmd.subtype == 5
+        r = cmd.system.firmwareInstallRequest
+        assert (r.unknown1, r.unknown2, r.version, r.md5) == (0, 0, "2.2.111", "0" * 32)
+
+    def test_upload_fields(self):
+        md5sum = bytes(range(16))
+        cmd = mass_upload_command(md5sum, 3452039)
+        assert cmd.type == 22 and cmd.subtype == 0
+        r = cmd.dataUpload.dataUploadRequest
+        assert r.type == MASS_UPLOAD_FIRMWARE
+        assert r.md5sum == md5sum
+        assert r.size == 3452039
+
+    def test_upload_default_type_is_firmware(self):
+        cmd = mass_upload_command(b"\x00" * 16, 0)
+        assert cmd.dataUpload.dataUploadRequest.type == MASS_UPLOAD_FIRMWARE
+
+
+class TestMassPush:
+    """mass_push arms the receiver, then streams plaintext chunks on channel 2."""
+
+    def _make_watch(self):
+        w = XiaomiWatch("AA:BB:CC:DD:EE:FF", 1, b"\x00" * 32)
+        w.sess.phone_nonce = b"\x01" * 16
+        w.sess.set_keys(b"\x02" * 16)
+        w.sess.encrypted = True
+        sent: list[bytes] = []
+
+        class FakeLink:
+            def __init__(self):
+                self.buf = b""
+
+            def send(self, data: bytes):
+                sent.append(data)
+
+            def fill(self, timeout: float) -> bool:
+                return False
+
+            def close(self):
+                pass
+
+        w.link = FakeLink()
+        return w, sent
+
+    @staticmethod
+    def _fake_wait_for(chunk_size=4096, errno=0):
+        def wait(ctype, subtype, timeout=10):
+            if ctype == 2:
+                r = xiaomi_pb2.Command(type=2, subtype=5)
+                r.system.firmwareInstallResponse.status = 0
+                return r
+            if ctype == 22:
+                r = xiaomi_pb2.Command(type=22, subtype=0)
+                r.dataUpload.dataUploadAck.errno = errno
+                r.dataUpload.dataUploadAck.chunkSize = chunk_size
+                return r
+            return None
+
+        return wait
+
+    def test_streams_plaintext_chunks_on_channel_2(self, monkeypatch):
+        w, sent = self._make_watch()
+        monkeypatch.setattr(w, "wait_for", self._fake_wait_for())
+
+        data = b"\x00" * 9000  # 4096 + 4096 + 808
+        w.mass_push(data)
+
+        parsed = [parse_v2(f) for f in sent]
+        assert all(p[0] == T_DATA for p in parsed)
+        # two encrypted handshake commands on channel 1, then raw plaintext chunks on channel 2
+        assert [p[2][0] & 0x0F for p in parsed] == [
+            CH_PROTOBUF,
+            CH_PROTOBUF,
+            CH_DATA,
+            CH_DATA,
+            CH_DATA,
+        ]
+        assert [p[2][1] for p in parsed] == [
+            OP_WRITE_ENC,
+            OP_WRITE_ENC,
+            OP_WRITE,
+            OP_WRITE,
+            OP_WRITE,
+        ]
+        assert [len(p[2]) - 2 for p in parsed][-3:] == [4096, 4096, 808]
+        assert w.l2_channel == 1  # restored after the push
+
+    def test_chunk_size_override(self, monkeypatch):
+        w, sent = self._make_watch()
+        monkeypatch.setattr(w, "wait_for", self._fake_wait_for())
+
+        w.mass_push(b"\x00" * 10, chunk_size=4)
+        parsed = [parse_v2(f) for f in sent]
+        assert [len(p[2]) - 2 for p in parsed][-3:] == [4, 4, 2]
+
+    def test_aborts_on_ack_errno(self, monkeypatch):
+        w, sent = self._make_watch()
+        monkeypatch.setattr(w, "wait_for", self._fake_wait_for(errno=1))
+
+        ack = w.mass_push(b"\x00" * 100)
+        parsed = [parse_v2(f) for f in sent]
+        # prepare + upload only, no data chunks
+        assert len(parsed) == 2
+        assert ack is not None
+        assert ack.dataUpload.dataUploadAck.errno == 1
+
+    def test_send_until_space_waits_for_window(self):
+        """_send_until_space pumps the link until the TX window opens again."""
+        w, sent = self._make_watch()
+        for _ in range(XiaomiWatch.TX_WINDOW):
+            w._send_data(OP_WRITE, b"\x00")
+        assert w.pending_count == XiaomiWatch.TX_WINDOW
+
+        # A cumulative ACK for the last in-flight frame frees the whole window.
+        w.link.buf = encode_v2(T_ACK, XiaomiWatch.TX_WINDOW - 1, b"")
+        frame = w._send_until_space(OP_WRITE, b"payload", timeout=1.0)
+
+        assert frame is not None
+        assert w.pending_count == 1  # only the newly sent frame remains

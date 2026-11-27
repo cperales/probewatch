@@ -24,6 +24,7 @@ Console usage:
   uv run python src/xiaomi_client.py --send 2 18 --channel 6     # send on channel 6 (OTA)
   uv run python src/xiaomi_client.py --send 2 18 --opcode read   # query opcode
   uv run python src/xiaomi_client.py --ota-require               # read-only OTA handshake
+  uv run python src/xiaomi_client.py --mass-push FW.bin         # ota_type=2 mass-channel push
   uv run python src/xiaomi_client.py --listen 30                 # connect, dump unsolicited
   uv run python src/xiaomi_client.py --capture                   # record every frame, NDJSON
 
@@ -400,6 +401,40 @@ def decode_ota_progress(args: bytes) -> int:
     return args[0]
 
 
+# --------------------------------------------------------------------------- mass channel (2) push
+# `ota_type = 2` (this watch) updates firmware over the mass channel: a channel-1 protobuf
+# handshake arms the receiver, then the raw SiFli package is streamed on channel 2 as plaintext
+# OP_WRITE chunks of the device-advertised chunkSize (4096). See docs/mass-channel.md.
+MASS_UPLOAD_FIRMWARE = 32  # DataUploadRequest.type for a firmware image
+MASS_DEFAULT_CHUNK = 4096  # DataUploadAck.chunkSize measured on this watch
+
+
+def mass_chunks(data: bytes, chunk_size: int) -> list[bytes]:
+    """Split *data* into *chunk_size* pieces; the last may be short."""
+    return [data[i : i + chunk_size] for i in range(0, len(data), chunk_size)]
+
+
+def mass_prepare_command(version: str, md5_hex: str) -> xiaomi_pb2.Command:
+    """Build the firmware prepare ``Command{2,5}`` (battery-gated; version/md5 not compared)."""
+    cmd = xiaomi_pb2.Command(type=2, subtype=5)
+    cmd.system.firmwareInstallRequest.unknown1 = 0
+    cmd.system.firmwareInstallRequest.unknown2 = 0
+    cmd.system.firmwareInstallRequest.version = version
+    cmd.system.firmwareInstallRequest.md5 = md5_hex
+    return cmd
+
+
+def mass_upload_command(
+    md5sum: bytes, size: int, upload_type: int = MASS_UPLOAD_FIRMWARE
+) -> xiaomi_pb2.Command:
+    """Build the ``Command{22,0}`` DataUploadRequest that arms the mass-channel receiver."""
+    cmd = xiaomi_pb2.Command(type=22, subtype=0)
+    cmd.dataUpload.dataUploadRequest.type = upload_type
+    cmd.dataUpload.dataUploadRequest.md5sum = md5sum
+    cmd.dataUpload.dataUploadRequest.size = size
+    return cmd
+
+
 # --------------------------------------------------------------------------- crypto (XiaomiAuthService)
 def hmac_sha256(key: bytes, msg: bytes) -> bytes:
     return hmac.new(key, msg, hashlib.sha256).digest()
@@ -504,6 +539,18 @@ class XiaomiWatch:
         self._sent_times[seq] = time.time()
         if self.capture:
             self.capture.frame("tx", T_DATA, seq, self.l2_channel, opcode, payload)
+        return frame
+
+    def _send_until_space(self, opcode: int, payload: bytes, timeout: float = 30.0) -> bytes | None:
+        """Send a DATA frame, pumping the link until the TX window opens.
+
+        Returns the encoded frame, or ``None`` if the window never opened within *timeout*.
+        """
+        deadline = time.time() + timeout
+        frame = self._send_data(opcode, payload)
+        while frame is None and time.time() < deadline:
+            self._pump(min(1.0, deadline - time.time()))
+            frame = self._send_data(opcode, payload)
         return frame
 
     def send_command(self, cmd: xiaomi_pb2.Command):
@@ -850,6 +897,59 @@ class XiaomiWatch:
         self.send_command(cmd)
         return self.wait_for(cmd.type, cmd.subtype, timeout)
 
+    def mass_push(
+        self,
+        data: bytes,
+        chunk_size: int | None = None,
+        fw_version: str = "",
+        upload_type: int = MASS_UPLOAD_FIRMWARE,
+    ) -> xiaomi_pb2.Command | None:
+        """Push a file over the mass channel (2), the ``ota_type = 2`` path.
+
+        For firmware this sends the battery-gated prepare (``2/5``), then arms the receiver
+        with a ``DataUploadRequest`` (``22/0``), then streams the raw bytes as plaintext
+        ``OP_WRITE`` chunks of the advertised ``chunkSize`` (4096). Returns the
+        ``DataUploadAck`` command, or ``None`` if the receiver never answered.
+        """
+        md5 = hashlib.md5(data).digest()
+        md5_hex = md5.hex()
+        print(f"[mass] {len(data)} B, md5 {md5_hex}")
+
+        if upload_type == MASS_UPLOAD_FIRMWARE:
+            self.send_command(mass_prepare_command(fw_version, md5_hex))
+            r = self.wait_for(2, 5)
+            if r is not None and r.system.HasField("firmwareInstallResponse"):
+                print(f"[mass] prepare status {r.system.firmwareInstallResponse.status}")
+
+        self.send_command(mass_upload_command(md5, len(data), upload_type))
+        ack = self.wait_for(22, 0)
+        chunk = chunk_size or MASS_DEFAULT_CHUNK
+        if ack is not None and ack.dataUpload.HasField("dataUploadAck"):
+            a = ack.dataUpload.dataUploadAck
+            print(f"[mass] ack errno {a.errno} chunkSize {a.chunkSize} resume {a.resumePosition}")
+            if a.errno != 0:
+                print(f"[mass] receiver not ready (errno {a.errno}), aborting")
+                return ack
+            if chunk_size is None and a.chunkSize:
+                chunk = a.chunkSize
+        elif ack is None:
+            print("[mass] no DataUploadAck; pushing with the default chunk size")
+
+        saved = self.l2_channel
+        self.l2_channel = CH_DATA
+        try:
+            for off in range(0, len(data), chunk):
+                piece = data[off : off + chunk]
+                if self._send_until_space(OP_WRITE, piece) is None:
+                    print("[mass] send window stalled, aborting")
+                    return ack
+                if off % (chunk * 32) == 0:
+                    print(f"[mass] {off}/{len(data)} B")
+        finally:
+            self.l2_channel = saved
+        print(f"[mass] pushed {len(data)} B")
+        return ack
+
     def listen(self, seconds: float, keepalive: float = 0) -> None:
         """Listen for unsolicited frames for *seconds* seconds, printing each.
 
@@ -944,6 +1044,20 @@ def main():
         help="Send the read-only OTA REQUIRE handshake on channel 6 and print the reply",
     )
     p.add_argument(
+        "--mass-push",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Push a firmware file over the mass channel (2): prepare + DataUpload + raw push",
+    )
+    p.add_argument(
+        "--fw-version",
+        type=str,
+        default="",
+        metavar="VER",
+        help="Version string for the --mass-push prepare (not compared; battery gate only)",
+    )
+    p.add_argument(
         "--send",
         nargs=2,
         type=int,
@@ -1013,13 +1127,7 @@ def main():
         for ctype, subtype in a.send or []:
             cmd = build_command(ctype, subtype, a.payload)
             print(f"Sending command {ctype}/{subtype} on ch{a.l2_channel} ({a.opcode}) ...")
-            data = cmd.SerializeToString()
-            deadline = time.time() + a.timeout
-            frame = w._send_data(opcode, data)
-            while frame is None and time.time() < deadline:
-                # Window is full: pump ACKs through, then retry the same frame.
-                w._pump(min(1.0, deadline - time.time()))
-                frame = w._send_data(opcode, data)
+            frame = w._send_until_space(opcode, cmd.SerializeToString(), a.timeout)
             if frame is None:
                 print("send window still full, skipping this command")
                 continue
@@ -1035,11 +1143,7 @@ def main():
         if a.ota_require:
             print("Sending OTA REQUIRE (5A 0A 00) on channel 6 ...")
             w.l2_channel = CH_OTA
-            deadline = time.time() + a.timeout
-            frame = w._send_data(OP_WRITE, ota_require_segment())
-            while frame is None and time.time() < deadline:
-                w._pump(min(1.0, deadline - time.time()))
-                frame = w._send_data(OP_WRITE, ota_require_segment())
+            frame = w._send_until_space(OP_WRITE, ota_require_segment(), a.timeout)
             if frame is None:
                 print("send window still full, aborting the OTA probe")
             else:
@@ -1050,6 +1154,12 @@ def main():
                     print("(no OTA reply)")
                     if not a.listen:
                         sys.exit(1)
+
+        # --mass-push: the ota_type = 2 file push (prepare + DataUpload + raw channel-2 bytes)
+        if a.mass_push:
+            print(f"Pushing {a.mass_push} over the mass channel ...")
+            with open(a.mass_push, "rb") as fh:
+                w.mass_push(fh.read(), fw_version=a.fw_version)
 
         # --listen: connect and listen for unsolicited frames
         if a.listen:

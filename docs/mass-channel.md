@@ -79,16 +79,23 @@ So the open is only answered once `DataUploadRequest` carries `size` **and** `md
 request is ACKed-and-ignored (like the `OP_READ` on channel 2 in
 [channels.md](channels.md#findings)), a complete one gets `errno: 0` (ready), the echoed md5,
 `resumePosition: 0` and **`chunkSize: 4096`** — matching the firmware's 4 KB page. Pushing no
-chunk, the watch self-clears when the session ends. The documented `2/5` reply codes (`0 ok,
-2 already pushed, 3 error, 4 low battery`, [ota.md](ota.md)) stay unverified on hardware, but
-static analysis confirms the low-battery rejection is real: the prepare handler gates on
-battery ≥ 30 % and rejects below it, and it does not compare the `version` string
-([ota.md](ota.md#watch-side-prepare-gate)).
+chunk, the watch self-clears when the session ends. Static analysis confirms the low-battery
+rejection: the prepare handler gates on battery ≥ 30 % and rejects below it, and it does not
+compare the `version` string ([ota.md](ota.md#watch-side-prepare-gate)).
 
-## Not in the client
+The full push was then measured `[hw 2.2.111 2026-11-27]`: `--mass-push` sent the complete
+`2/5` (`version` + `md5`) and got **`status 0`** (battery 89 %), then `22/0`
+`dataUploadRequest{type:32}` got **`errno:0 chunkSize:4096`**, and 8193 B of a deliberately
+**bad-magic** payload (not `ad ef cd af`) streamed on channel 2 as plaintext `OP_WRITE` chunks.
+The watch armed and received it; the header check rejects the bad magic without writing flash,
+and a follow-up read was normal — so the `2/5` `0 ok` code is now confirmed on hardware.
+
+## The client
 
 The channel-2 chunk framing is channel + opcode + raw bytes, already covered by
 `encode_v2` / `_send_data` ([architecture.md](architecture.md)); `DataUpload` is protobuf
-(`xiaomi_pb`); the package header parser is `scripts/extract_firmware.py`. There is no separate
-mass-channel codec to add, and the `START`/`DATA` push is deliberately not part of
-`src/xiaomi_client.py`.
+(`xiaomi_pb`); the package header parser is `scripts/extract_firmware.py`, so there is no
+separate mass-channel codec. The push itself is `XiaomiWatch.mass_push`, exposed as
+`--mass-push PATH` (`2/5` prepare → `22/0` `DataUpload` → plaintext `OP_WRITE` chunks on
+channel 2). It is the first **write** path in the client and is gated behind that explicit
+flag; no test in `make check` runs it (the watch is only ever *read* here).

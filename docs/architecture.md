@@ -112,8 +112,8 @@ The receive side reads the channel as the low nibble of the first payload byte
 ## CLI
 
 `main()` parses `--send TYPE SUBTYPE [--payload text_format]` (repeatable), `--channel`,
-`--opcode`, `--timeout`, `--listen`, `--keepalive`, `--capture`, `--ota-require`, `--key-file`
-and `-v`.
+`--opcode`, `--timeout`, `--listen`, `--keepalive`, `--capture`, `--ota-require`,
+`--mass-push PATH`, `--fw-version`, `--key-file` and `-v`.
 `build_command()` turns `--payload` into a `Command`, and `load_key()` reads
 `secrets/auth_key.txt`. Flags and examples: [scripts.md](scripts.md).
 
