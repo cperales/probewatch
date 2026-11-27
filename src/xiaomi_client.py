@@ -970,7 +970,7 @@ class XiaomiWatch:
         hand-built: ``type=22, subtype=1, dataUpload{control{a=1, b=47}}``. Sent encrypted on
         channel 1, like any non-auth command.
         """
-        raw = bytes.fromhex("0816" "1001" "c20106" "1a04" "0801" "102f")
+        raw = bytes.fromhex("08161001c201061a040801102f")
         saved = self.l2_channel
         self.l2_channel = CH_PROTOBUF
         try:
