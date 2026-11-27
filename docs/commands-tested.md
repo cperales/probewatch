@@ -32,6 +32,8 @@ knows can still answer `status: 1`.
 | `8/35` vitality score | `vitalityScore { sevenDay: false dailyProgress: false }` | [hw 2.2.111 2026-11-24] |
 | `8/42` goals get | `currentGoals: 1,2,3`, `supportedGoals: 1,2,3,4` | [hw 2.2.111 2026-11-24] |
 | `17/0` alarms get | `schedule { alarms: 3 (ids 0,1,2; `alarmDetails { time hour minute } repeatMode enabled smart`), maxAlarms: 10 }` | [hw 2.2.111 2026-11-27] |
+| `17/6` weekday info, empty body | no answer | [hw 2.2.111 2026-11-27] |
+| `17/16` alert/dismiss, empty body | no answer | [hw 2.2.111 2026-11-27] |
 
 Recheck on 2.2.111 [hw 2.2.111 2026-11-24], reads only: `2/1`, `2/2`, `2/14` (settings 1 and
 2), `2/24`, `2/51`, `4/0`, `8/2` and `8/29` answer as on 2.2.110, and `2/34` and `2/78` still
@@ -61,6 +63,7 @@ Why this matters for channels 2 and 5: [channels.md](channels.md#findings).
 | `2/23`, `2/34` DND | `status: 1`, not implemented | |
 | `2/25` raise-to-wake set | transport ACK, no reply, value unchanged | |
 | `2/78`, `2/79` device state | `status: 1` | |
+| `17/5` `schedule { createAlarm { time { hour: 0 minute: 5 } repeatMode: 0 enabled: true smart: 2 } }` | `schedule { ackId: 0 }`; the 3-alarm schedule is unchanged, so `createAlarm` is acknowledged but not persisted this way | [hw 2.2.111 2026-11-27] |
 
 DND was tried exhaustively: `2/23` with status 0 and 2, and `2/34` with status 0, all answer
 `status: 1` and change neither `2/34` nor the `2/14` setting 2 read (`dndSync.enabled: 0`).
