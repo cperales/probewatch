@@ -288,6 +288,22 @@ def parse_v2(buf: bytes):
     return flags_type & 0x0F, seq, payload, i + 8 + ln
 
 
+def parse_session_config(payload: bytes) -> dict[int, bytes]:
+    """Parse a SESSION config payload: ``[opcode][type][len u16 LE][value]...``.
+
+    The watch answers SESSION_START with its own limits; config type 3 is TX_WIN, the
+    number of DATA frames it can hold in flight. Sending past it overflows its buffer.
+    """
+    cfg: dict[int, bytes] = {}
+    i = 1  # skip the opcode byte
+    while i + 3 <= len(payload):
+        kind = payload[i]
+        ln = struct.unpack_from("<H", payload, i + 1)[0]
+        cfg[kind] = payload[i + 3 : i + 3 + ln]
+        i += 3 + ln
+    return cfg
+
+
 # --------------------------------------------------------------------------- OTA channel (0x5A framing)
 # The app's `HyOtaExecutor` (product `ota_type == 1`) frames channel-6 payloads itself:
 # `0x5A`, a big-endian length, a segment flag/frame number, and a CRC-16/ARC over everything
@@ -511,11 +527,22 @@ class XiaomiWatch:
         self._sent_times: dict[int, float] = {}  # seq -> last send timestamp
         self.ota_parts: dict[int, bytes] = {}  # frame_no -> payload of a multi-segment body
         self.ota_replies: list[tuple[int, bytes]] = []  # decoded channel-6 commands
+        self.peer_window: int | None = None  # watch's advertised TX_WIN (from SESSION config)
 
     @property
     def pending_count(self) -> int:
         """Number of DATA frames sent but not ACKed yet."""
         return len(self._sent)
+
+    @property
+    def send_window(self) -> int:
+        """Max DATA frames in flight.
+
+        The watch advertises TX_WIN 3, but pacing to it collapses throughput (the ACK is
+        delayed ~500 ms, so 3 frames/cycle is ~16 KB/s); the ARQ tolerates the 32-frame
+        window and reaches ~150 KB/s, so keep TX_WINDOW.
+        """
+        return self.TX_WINDOW
 
     # -- low level
     def _send_data(self, opcode: int, payload: bytes) -> bytes | None:
@@ -524,8 +551,8 @@ class XiaomiWatch:
         Returns ``None`` when the send window is full; the caller should pump
         the link until space opens.
         """
-        if self.pending_count >= self.TX_WINDOW:
-            log(f"window full ({self.pending_count}/{self.TX_WINDOW}), cannot send")
+        if self.pending_count >= self.send_window:
+            log(f"window full ({self.pending_count}/{self.send_window}), cannot send")
             return None
 
         body = bytes([self.l2_channel & 0x0F, opcode]) + (
@@ -685,7 +712,15 @@ class XiaomiWatch:
                     self._retransmit(s)
 
             elif ptype == T_SESSION:
-                log("session config from watch, opcode", payload[:1].hex(), payload.hex(" "))
+                cfg = parse_session_config(payload)
+                if cfg.get(3):
+                    self.peer_window = struct.unpack_from("<H", cfg[3])[0]
+                log(
+                    "session config from watch",
+                    {k: v.hex() for k, v in cfg.items()},
+                    "peer_window",
+                    self.peer_window,
+                )
                 self.session_ok = True
 
             elif ptype == T_DATA:
