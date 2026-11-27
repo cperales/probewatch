@@ -109,6 +109,11 @@ header (type byte, file MD5, length) and suffixed with a CRC-32; `SppChannel` re
 inter-packet timer on every packet (`FUN_1215b11c(..., 45000, ...)`) and looks up an existing
 context by data_id, so a 40 s gap fits inside 45 s and a reconnect can resume `[fw 2.2.111]`.
 
+Measured `[hw 2.2.111 2026-11-27]`: across 9 dropped sessions the watch answered
+`resumePosition 0` every time, so a reconnect restarts from 0 — partial firmware (type 32) is
+**not** persisted across SPP sessions on this unit, and the app's `pauseMass`
+(`Command{22,1}`, control 1) is the only explicit resume message (sent on stop/cancel).
+
 ## The client
 
 The channel-2 chunk framing is channel + opcode + raw bytes, already covered by
