@@ -96,15 +96,11 @@ referenced only from inside the function that bears it, so an xref to it names t
 
 ### Pointer density
 
-`uv run python scripts/pointer_density.py` counts the 32-bit words that address the image
-itself: 1,737 of 47,558 (3.7%) at `0x20000000`, 974 odd (Thumb code pointers) and 763 even
-(data), spanning `0x20000000`–`0x2002e714`. The count stays within 90% of its peak for
-candidate bases `0x20000000`–`0x2000f000` and collapses outside it (12, 21 and 0 self-pointers
-one image length below, one MB above, and 1 MB below). So it brackets the base to about the
-image size and no better: it rules out gross errors, and the vector table fixes the exact
-value. It is inconclusive for the LCPU — 91,525 of its words point into its own block and
-13,325 into HCPU SRAM, so every base in the sweep stays above 60% of the peak; that image's
-base and `-0x26000` relocation come from the vector table ([lcpu.md](lcpu.md)).
+`uv run python scripts/pointer_density.py` counts the image's self-pointers: 1,737 of 47,558
+words (3.7%) at `0x20000000`. The count stays near its peak only for bases within the image
+size of `0x20000000`, so it rules out gross errors; the vector table fixes the exact value. It
+is inconclusive for the LCPU (too many self-pointers), whose base and `-0x26000` relocation
+come from the vector table ([lcpu.md](lcpu.md)).
 
 The DFU/OTA installer (`ota_type = 2`) is the densest named cluster, plus the FAL/FlashDB
 calls it makes; the rows are on [firmware-symbols.md](firmware-symbols.md).
@@ -130,7 +126,10 @@ entries) are reported by Byterialab [ext Byterialab].
 
 The phone checks the download's MD5 (see [ota.md](ota.md)); the watch verifies the image
 against a baked-in RSA-2048 public key and cert chain [ext Byterialab]. The signing key is not
-on the watch, so an image cannot be re-signed from the device [inferred].
+on the watch, so an image cannot be re-signed from the device [inferred]. That check is not in
+the HCPU installer (image0 has no SHA-256/RSA code [fw 2.2.111]); the SDK's
+`dfu_img_verification` is compiled out here, so the bootloader verifies — with no rollback
+check ([firmware-symbols.md](firmware-symbols.md)).
 
 ## Next
 

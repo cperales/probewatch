@@ -25,43 +25,37 @@ at `0x2002d0d4`) is referenced only from inside the function that bears it, so
 `xref(name_literal)` → `resolve_containing_procedure(ref)` names the function. Each entry
 below was found this way; `name_literal` records the anchor so each row is re-checkable.
 
-The pass runs over all **794 strings** of the image
-(`secrets/ghidra/scripts/DumpStringXrefs.java`, output `hcpu-strings.ndjson`): 200 are
-bare-identifier anchors and 143 functions own one. `__func__` is then separated from a
-coincidental identifier at the call site — the literal is loaded into `r1` and passed to the
-assert handler (`0x200179e4`) next to a `__LINE__` immediate. A data string such as a mutex or
-device name is the first argument and lands in `r0`; those are rejected.
+The pass runs over all **794 strings** of the image (`DumpStringXrefs.java` →
+`hcpu-strings.ndjson`): 200 are bare-identifier anchors and 143 functions own one. `__func__`
+is then separated from a coincidental identifier at the call site — the literal loads into
+`r1` and reaches the assert handler (`0x200179e4`) next to a `__LINE__` immediate; a data
+string lands in `r0` and is rejected.
 
-Two independent checks back the rows: the `__LINE__` immediate must fall inside a same-named
-function in the SiFli-SDK source (v2.3.6), and the whole image was cross-matched with
-decompiler signatures (BSim) against a compiled slice of that SDK. The slice covers the
-RT-Thread kernel, the SoC drivers, FAL/FlashDB and the DFU middleware — 504 functions — so the
-comparison reaches beyond the kernel into the flash and display code.
+Two checks back the rows: the `__LINE__` immediate must fall inside a same-named SiFli-SDK
+(v2.3.6) function, and the image is BSim cross-matched against a compiled SDK slice (kernel,
+SoC drivers, FAL/FlashDB, DFU middleware — 504 functions).
 
 | Confidence | Meaning |
 |---|---|
 | high | two ways: the assert call site plus the line landing inside the same-named source function, or a decompiler-signature match whose callees, callers and size all agree |
 | medium | one way: the assert call site without the source check (the source is not public — prebuilt `sifli_lib` or app code), or a signature match without call-graph agreement |
 
-Sixty-four rows have **no string anchor at all**: they were recovered from the signature match
-and the call graph, and each page marks them as such
+Sixty-four rows have **no string anchor**: recovered from the signature match and call graph,
+and marked as such on each page
 ([kernel](firmware-symbols-kernel.md#recovered-from-the-call-graph),
 [flash](firmware-symbols-flash.md)).
 
-Two exclusions are deliberate. Functions carrying **two different** `__func__` literals are not
-named from the anchor (`0x200100d0`, `0x200166e8`, `0x200157d8`, `0x2001c680`): an inlined
-callee logs its own name, so the entry cannot be chosen this way — `dfu_ctrl_reset_handler`
-below is the worked example. Literals owned by no function or by a data table
-(`NO_TAG`, `DFUCTRL`, `status_table`, `db_lock`) are skipped.
+Two exclusions are deliberate: functions carrying **two** `__func__` literals are not named
+from the anchor (`0x200100d0`, `0x200166e8`, `0x200157d8`, `0x2001c680`) — an inlined callee
+logs its own name (`dfu_ctrl_reset_handler` is the worked example) — and literals owned by no
+function or a data table (`NO_TAG`, `DFUCTRL`, `status_table`, `db_lock`) are skipped.
 
 ## Provider caveat
 
-Re-imported with Ghidra 12.2 under the Cortex-M language `ARM:LE:32:Cortex` (ARMv8-M /
-Cortex-M33): HCPU at `0x20000000`, 923 functions. Entry points and bodies are reliable; a
-body is the contiguous range from the entry (some Ghidra bodies have detached fragments).
-The `0x200100d0` region did **not** split: it is one function, `dfu_ctrl_reset_handler`, whose
-callees `dfu_offline_install` and `dfu_reboot_install` the compiler inlined (one prologue at
-`0x200100d0`, one epilogue at `0x200104da`).
+Re-imported with Ghidra 12.2 under `ARM:LE:32:Cortex` (Cortex-M33): HCPU at `0x20000000`,
+923 functions. The `0x200100d0` region did **not** split: one function,
+`dfu_ctrl_reset_handler`, whose callees `dfu_offline_install` and `dfu_reboot_install` the
+compiler inlined (one prologue at `0x200100d0`, one epilogue at `0x200104da`).
 
 ## DFU, OTA and RTC
 
@@ -110,15 +104,18 @@ callees `dfu_offline_install` and `dfu_reboot_install` the compiler inlined (one
   high). `dfu_sec_init` (`0x20012164`) is the name the extension added. The larger bodies
   differ from v2.3.6 (`dfu_packet_erase_flash` 92 B vs 52 B), version drift rather than a
   misidentification.
+- No RSA-2048 check lives in this cluster: image0 has no SHA-256/RSA/mbedtls/DER-key code
+  [fw 2.2.111]. The SDK's check is `dfu_img_verification` (`dfu_sec.c`): SHA-256, then RSA
+  PKCS#1 v1.5 + SHA-256 against the "FCES" header key (`SEC_CONFIG_MAGIC 0x53454346`) that
+  `dfu_sec_init` points at flash `0x12000000`; compiled out under `OTA_INSTALL_OFFLINE`, so
+  the bootloader (flash `0x12004000`) verifies here [ext SiFli-SDK][ext Byterialab][inferred].
+- No rollback gate: `dfu_ctrl_compare_FW_version()` is `__WEAK` → pass; the only version test
+  is the SDK forward-compat check (`SDK_version > current` → reject) [ext SiFli-SDK].
 
 ## Pipeline
 
 The symbol map lives in `secrets/ghidra/symbols.json` (git-ignored) and holds both images,
-the per-row site evidence and the naming passes. Two scripts regenerate the importable forms:
-
-- `uv run python scripts/export_symbols.py` — writes `symbols.ghidra.txt` (Ghidra
-  `ImportSymbolsScript.py` format) and `scripts/apply_symbols.py` (prints `set_address_name`
-  commands for REA).
-- `uv run python scripts/apply_symbols.py` — prints `set_address_name(image, addr, name)`
-  for every symbol with a non-null entry (193 commands: 182 HCPU + 11 LCPU; the LCPU rows
-  without an entry are call sites, not functions).
+the per-row site evidence and the naming passes. `scripts/export_symbols.py` regenerates the
+importable forms: `symbols.ghidra.txt` (Ghidra `ImportSymbolsScript.py`) and
+`scripts/apply_symbols.py` (prints `set_address_name` commands for REA; 193 commands: 182
+HCPU + 11 LCPU, whose entry-less rows are call sites, not functions).

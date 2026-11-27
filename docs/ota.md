@@ -131,7 +131,8 @@ over `0xc603`–`0xc608`) → `ble_service_cb` (`0x12194e40`) → `ota_prepare_r
 which `strlen`+`memcpy`s the payload and sends it over SPP — `version` (and `md5`) is never
 compared. The installed version is read only by `dfu_get_version` (`0x120ff250`), called only
 from the DFU control handler (`0x120fe86c`), never from prepare, so the two never meet. The only
-version compares in the image are the hyn92xx/chsc6x touch-controller checks. The `0xc600 +
+version compares in the image are the hyn92xx/chsc6x touch-controller checks; the HCPU
+installer has none either ([firmware.md](firmware.md#update-verification)). The `0xc600 +
 subtype` encoding is confirmed end-to-end (app sends raw `subtype = 5`); symbols on
 [firmware-symbols-lcpu.md](firmware-symbols-lcpu.md).
 
