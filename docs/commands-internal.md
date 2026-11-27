@@ -206,12 +206,12 @@ routers in the previous section cover only the PB (types 0–10) and preprocess 
 frame router is what handles the rest.
 
 Type 17 **is** handled: `17/0` returns the stored `schedule { alarms … maxAlarms: 10 }`
-[hw 2.2.111 2026-11-27] ([commands-tested.md](commands-tested.md)). The earlier reading that
-no type-17 command reaches a handler was wrong: the two `tbh` routers (`0x12258624`,
-`0x12094890`) and the frame router (`0x15a73c`) are only part of the path, and a further
-`Command.type` dispatch exists that was not located statically. The schedule itself is
-persisted in the `alarm_clock_user` flash region at `0x134e0000` (80 KB, `0xbcbcbcbc` magic),
-read by `0x122af590`.
+[hw 2.2.111 2026-11-27] ([commands-tested.md](commands-tested.md)). The `Command.type`
+dispatcher is `pb_dispatch` `0x12208068`: it reads the type byte at `[msg]`, rejects
+`type > 0x17` (23), then `bx table[type]` from a runtime handler table at `0x6039a1f8` (24
+entries, populated at boot/`.data`, not statically writable — hence no jump table in the
+code). The schedule is persisted in the `alarm_clock_user` flash region at `0x134e0000`
+(80 KB, `0xbcbcbcbc` magic), read by `0x122af590`.
 
 `2/18` does **not** reach the tone either: its case builds a response. The watch rings from
 `g_popups_alarm_remind_logic` `0x1221bea4` → `play_sound`, driven by the popup framework.

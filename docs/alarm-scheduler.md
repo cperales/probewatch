@@ -150,9 +150,9 @@ association with `2/18` is withdrawn. `[fw 2.2.111]`
 ## Which commands reach this
 
 `17/0` (alarms get) returns the stored schedule on hardware
-([commands-tested.md](commands-tested.md)), so alarm commands **are** dispatched; the static
-`Command.type` switch for types 11–25 was just not located. The schedule lives in the
-`alarm_clock_user` flash region `0x134e0000` (read by `0x122af590`).
+([commands-tested.md](commands-tested.md)); the `Command.type` dispatcher is `pb_dispatch`
+`0x12208068` (`bx table[type]` from `0x6039a1f8`). The schedule lives in the `alarm_clock_user`
+flash region `0x134e0000` (read by `0x122af590`).
 
 The only verified command is the shell `__cmd_alarm_dump` (`0x49bc8c`): handler `0x12263ea0`
 walks the list and calls `alarm_node_rtc_arm` per node. The popup `0x1221bea4` rings via
