@@ -545,11 +545,14 @@ class XiaomiWatch:
         """Send a DATA frame, pumping the link until the TX window opens.
 
         Returns the encoded frame, or ``None`` if the window never opened within *timeout*.
+        Pumps in short slices so an ACK that arrives mid-wait is acted on at once instead
+        of after the whole timeout: with the watch's delayed ACKs this is the difference
+        between ~80 KB/s and a push that fits inside the ~25 s session.
         """
         deadline = time.time() + timeout
         frame = self._send_data(opcode, payload)
         while frame is None and time.time() < deadline:
-            self._pump(min(1.0, deadline - time.time()))
+            self._pump(min(0.02, deadline - time.time()))
             frame = self._send_data(opcode, payload)
         return frame
 
