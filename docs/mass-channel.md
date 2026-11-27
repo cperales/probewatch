@@ -96,6 +96,19 @@ ends each entry in a 4-byte field, and the images are the raw HCPU and compresse
 So the package itself carries only 4-byte per-sub-file values; the signing gate (if enforced)
 is against the flash `sec_configuration` (FCES header), not this file.
 
+## How the official app sends it
+
+`[apk 9.8.348i]` `MassDataDispatcher` drives the push **one segment at a time** (stop-and-wait):
+`sendMassData` → wait for the socket-write callback → next segment. The per-segment timeout is
+**40 s** (`elapsed > 40000 → onFail`) and `sendMassData` waits **12 s** (80 s on the play
+channel), far longer than the watch's ~20 s session cut — which is what lets it survive a slow
+link. It **resumes**: `DataUploadAck.resumePosition` is read as `sentLength` and the remaining
+file is split from there. The file is cut into **10 MB rounds**, each prefixed with a 22-byte
+header (type byte, file MD5, length) and suffixed with a CRC-32; `SppChannel` reports MTU
+`16394` `[apk 9.8.348i]`. On the watch, the receiver (`FUN_121104d4`) restarts a **45 s**
+inter-packet timer on every packet (`FUN_1215b11c(..., 45000, ...)`) and looks up an existing
+context by data_id, so a 40 s gap fits inside 45 s and a reconnect can resume `[fw 2.2.111]`.
+
 ## The client
 
 The channel-2 chunk framing is channel + opcode + raw bytes, already covered by
