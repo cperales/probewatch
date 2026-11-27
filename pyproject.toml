@@ -15,9 +15,10 @@ dependencies = [
 ]
 
 [dependency-groups]
-# grpcio-tools regenerates src/xiaomi_pb/; pytest and ruff run the harness checks.
+# grpcio-tools regenerates src/xiaomi_pb/; pytest, ruff and MkDocs run the harness checks.
 dev = [
     "grpcio-tools>=1.60",
+    "mkdocs-material>=9.5",
     "pytest>=8.0",
     "ruff>=0.9",
 ]

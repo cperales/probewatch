@@ -16,11 +16,13 @@ git-ignored `secrets/` directory, never in tracked files.
 |---|---|
 | `make setup` | `uv sync --python /usr/bin/python3` |
 | `make protos` | `./fetch_protos.sh`: pinned Gadgetbridge download + bindings |
-| `make check` | lint + tests + context budget + `compileall` |
+| `make check` | lint + tests + context budget + docs build + `compileall` |
 | `make lint` | `ruff check`, `ruff format --check`, `bash -n`/shellcheck on `fetch_protos.sh`, `scripts/check_docs.py` |
 | `make test` | `uv run pytest`; fetches protos first if `src/xiaomi_pb/` is missing |
 | `make fmt` | `ruff format .`, `ruff check --fix .`, `check_docs.py --fix` (index sizes) |
 | `make sizes` | context-budget table; fails if `AGENTS.md` > 12,000 B or a `docs/*.md` > 8,000 B |
+| `make docs` | `mkdocs build --strict` into `site/` (GitHub Pages; config `mkdocs.yml`) |
+| `make docs-serve` | live preview on `:8000` (`DOCS_ADDR=0.0.0.0:8000` for LAN); a new `docs/*.md` must also be added to `mkdocs.yml` nav |
 
 Single test: `uv run pytest tests/test_xiaomi_client.py -k name`. Nothing in `make check` needs
 the watch: `hardware`/`network` markers are deselected by `addopts` in `pyproject.toml`.

@@ -23,6 +23,9 @@ Common entry points: [setup](docs/setup.md), [scripts reference](docs/scripts.md
 Each fact is written once, on its topic page, tagged with where it comes from (hardware run,
 app, firmware or Gadgetbridge).
 
+The same pages are published at <https://cperales.github.io/probewatch/>: `make docs` builds
+the site locally with MkDocs + Material, and `.github/workflows/docs.yml` deploys it on push.
+
 ## Prerequisites
 
 - The watch must be **paired and trusted** with this PC. Use `src/pair_watch.py --direct` when
