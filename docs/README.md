@@ -20,7 +20,7 @@ short contract. `make sizes` tracks their cost (~3.8 bytes/token).
 | [channels.md](channels.md) | 7 KB | Channels 2 and 5: capture method, trigger matrix, analysis, findings |
 | [apk-analysis.md](apk-analysis.md) | 4 KB | Official app: provenance, where the protocol lives, what it gave |
 | [ota.md](ota.md) | 8 KB | Official app's firmware update: version check, download, channel-6 protocol |
-| [mass-channel.md](mass-channel.md) | 6 KB | Channel 2 (`ota_type = 2`): `DataUpload` handshake, chunk framing, watch receiver, read-only open results |
+| [mass-channel.md](mass-channel.md) | 7 KB | Channel 2 (`ota_type = 2`): `DataUpload` handshake, chunk framing, watch receiver, read-only open results |
 | [firmware.md](firmware.md) | 8 KB | The watch package: two images (HCPU/LCPU), unpacking, DFU, load map |
 | [firmware-symbols.md](firmware-symbols.md) | 8 KB | HCPU symbol map: method, confidence rules, DFU/OTA and RTC cluster |
 | [firmware-symbols-flash.md](firmware-symbols-flash.md) | 6 KB | HCPU FAL and FlashDB KV store symbols, recovered by call graph |

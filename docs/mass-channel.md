@@ -90,6 +90,12 @@ The full push was then measured `[hw 2.2.111 2026-11-27]`: `--mass-push` sent th
 The watch armed and received it; the header check rejects the bad magic without writing flash,
 and a follow-up read was normal — so the `2/5` `0 ok` code is now confirmed on hardware.
 
+The `.bin` it carries is exactly `header (0xa8) + image0 + image1`, with **no separate
+RSA-2048 signature blob** `[fw 2.2.111]`: the sub-file table (offset 8, ten 16-byte entries)
+ends each entry in a 4-byte field, and the images are the raw HCPU and compressed LCPU streams.
+So the package itself carries only 4-byte per-sub-file values; the signing gate (if enforced)
+is against the flash `sec_configuration` (FCES header), not this file.
+
 ## The client
 
 The channel-2 chunk framing is channel + opcode + raw bytes, already covered by
