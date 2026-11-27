@@ -38,7 +38,10 @@ kept for parity with the app's `SAR_DEFAULT_TX_WIN_REMOTE`, but the client does 
 - `_send_data()` returns `None` when the window is full: the caller pumps and retries, and never
   drops the frame.
 - The watch advertises a TX window of 3 in its session config
-  ([protocol.md](protocol.md#session-parameters)).
+  ([protocol.md](protocol.md#session-parameters)). Honouring it (3 frames per ACK cycle) drops
+  bulk throughput to ~16 KB/s because the ~0.5 s delayed ACK dominates; the 32-frame window
+  reaches ~150 KB/s and the ARQ tolerates the overflow, so the client keeps 32
+  `[hw 2.2.111 2026-11-27]`.
 
 ## Measured
 
