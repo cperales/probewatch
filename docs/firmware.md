@@ -18,8 +18,7 @@ Source: [fw 2.2.111] unless tagged.
 | Local | `secrets/firmware/…bin` (git-ignored) |
 
 Fetched without the account API: Mi Fitness logs the `LatestVersion` object (`fullPackageUrl`,
-`md5`) to `logcat` under the `CheckUpdate` tag, and that URL is a signed CDN link, so `curl` is
-enough; the app's own copy lands in its `files/Download/<model>/<md5>`. The direct-API route is
+`md5`) to `logcat`; the URL is a signed CDN link, so `curl` is enough. The direct-API route is
 `scripts/fetch_firmware_url.py` (needs the `miothealth` cookie, [ota.md](ota.md)).
 
 ## What it is
@@ -37,8 +36,8 @@ confirmed in this image; Byterialab reports SF32LB551 [ext Byterialab].
 | `Flash Abstraction Layer (V%s)`, `fal_partition_read/write/erase`, `Partition (%s) not found` | RT-Thread FAL partition table |
 | `FlashDB V%s`, `[FlashDB][kv]` | armink FlashDB key/value store |
 | `dfu_image_install_flash_lite`, `dfu_packet_erase_flash dest 0x%x`, `dfu_ota_bootloader_ram_run_set`, `dfu_reboot_install` | DFU/OTA installer |
-| `app_watch`, `battery_charger_init ok!`, `dac`, `RTC use LXT`, `Init RTC, wake = %d` | app, power, audio, alarms |
-| `spp_connect`, `rfcomm chl = 0x%x`, `l2cap`, `gatt`, `miwear_mass_*`, `hkdf_sha256.c` | LCPU Bluetooth/SPP stack |
+| `app_watch`, `battery_charger_init ok!`, `RTC use LXT`, `Init RTC, wake = %d` | app, power, alarms (RTC wake) |
+| `spp_connect`, `rfcomm chl = 0x%x`, `l2cap`, `gatt`, `miwear_mass_*`, `hkdf_sha256.c`, `dac set volume`, `alarm_remind`, `al_alarm_set` | LCPU Bluetooth/SPP stack, DAC/tone, alarm scheduler |
 
 ## The package is two images
 
@@ -76,12 +75,11 @@ receives it is the DFU cluster below.
 
 ## Sound and alarms
 
-Both live in the HCPU image:
-
-- **Audio**: the SiFli `dac` driver path (tone/beep), not an I²S codec; the app's HFP audio is
-  a separate Bluetooth profile (see [audio.md](audio.md)).
-- **Alarms**: `rt_rtc_control`, `drv.rtc`, `RTC use LXT`, `Init RTC, wake = %d` — an RTC
-  compare/wake path on the LXT crystal.
+Mostly the **LCPU**: the DAC/codec path, the codec tone, and the whole alarm service — the
+`alarmsvc` list scan and the RTC `SET_ALARM`/wake write. The **HCPU** has its own `drv_rtc`
+copy but only `set_time` and the vendor compare command. Neither image has a "beep" or "tone"
+string. See [sound-alarms.md](sound-alarms.md) and [alarm-scheduler.md](alarm-scheduler.md).
+The app's HFP audio is a separate Bluetooth profile (see [audio.md](audio.md)).
 
 ## Load map (HCPU, verified)
 

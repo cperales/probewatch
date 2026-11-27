@@ -24,6 +24,9 @@ side of the protocol is here; the phone side is [apk-analysis.md](apk-analysis.m
   stubs; the reset resolves to `0x12003748`; and the four `SAR` log-string pool words sit
   consecutively at `0x1215aab0`. With the delta applied, the earlier "thread entry lands
   mid-function" anomalies disappear (the protobuf entry `0x1227e625` is really `0x12258624`).
+- Absolute **branch tables embedded in code** carry the same shift: the channel table at
+  `0x15a9e8` stores `0x12180a05`, which is really `0x1215aa05` (target `0x15aa04`). Reading
+  such a table without the shift lands mid-function.
 - Ghidra (via REA) imports with a 2 GB heap; the full image OOMs, a 2 MB slice analyzes.
   Patching every absolute word by `-0x26000` before import should give a clean full-image pass.
 
@@ -42,6 +45,15 @@ side of the protocol is here; the phone side is [apk-analysis.md](apk-analysis.m
 | L2 routing | `FUN_1215a9c8` switches on channel 1–7 and routes PB/MASS/OTA/NETWORK to handlers, logging via the SAR table at `0x1215aab0` |
 | Mass-file receiver | `FUN_12173a14`: the header event requires state `0x20`, clears a `0x140`-byte buffer, logs `mass_file_bin_header=…`, validates word 0 against **`0xafcdefad`** (SiFli magic) and header byte 6 against `0x02` (version word `0x0002026f`); parses up to 10 sub-file records of `0x10` B, then writes 4 KB flash pages in 1 KB sub-writes ([mass-channel.md](mass-channel.md)) |
 | HKDF source | `hkdf_sha256.c` with the `okm_size < 255 * sizeof(t)` assertion |
+
+## Sound and alarms
+
+The alarm service and the codec/DAC path are also here. An `alarmsvc` thread (`0x1226407c`,
+entry `0x122640e8`) scans the alarm list and arms the RTC through
+`rt_device_control(dev, 0x13)` (`0x121900e4`); the LCPU's own `rt_rtc_control` `0x12264ec8`
+writes `0x500cb000` and enables the NVIC line. The DAC volume handler is `0x120d1360`, the
+codec init `0x12264118` and the 1 kHz tone `0x120f6f68`. Details:
+[alarm-scheduler.md](alarm-scheduler.md) and [sound-alarms.md](sound-alarms.md).
 
 ## What it explains
 

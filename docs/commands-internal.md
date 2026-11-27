@@ -174,3 +174,53 @@ shape, the channel-2 framing and what a read-only open returns are in
 | 23/10 | MiLink device list |
 | 23/12 | connect state |
 | 23/19, 23/22 | phone state |
+
+## Which commands reach a firmware routine
+
+Source: [fw 2.2.111]. Three routers exist: `protobuf_dispatch_thread` `0x12258624` (types
+0–10, id = `0xc600 + subtype`), `app_preprocess_thread_entry` `0x12094890` (types 0–9), and the
+frame-level `0x15a73c` below. Only these mappings are verified end to end:
+
+| Command | Handler | Reaches |
+|---|---|---|
+| `22/0` `DataUpload` | frame type `0x16` in `0x15a73c` | `sdk_mass_pb_handle` `0x12110e24` → `mass_prepare` `0x1220a3f4` |
+| `2/18` find-device | `0x12258950` → `0x1220a9d4` | a protobuf-response encoder (`0x191baa`, `0x1a076c` → `0x15c906`), **not** the tone |
+| shell `__cmd_alarm_dump` | `0x12263ea0` (`0x49bc8c`) | walks the alarm list at `0x603b3d2c` and calls `alarm_node_rtc_arm` `0x121900e4` |
+| shell `audio_codec` | `0x120f6f68` (`0x49b50c`) | the 1 kHz tone routine |
+| shell `set codec dac volume` | `0x120f6f08` (`0x49b518`) | the codec volume setter `0x12163908` |
+| shell `__cmd_show_date` | `0x12279d90` (`0x49bc80`) | RTC date/time |
+| shell `set_time` | `0x12276a8c` (`0x49bc74`) | RTC time set |
+
+The frame-level router is `0x15a73c`, reached from `l2_channel_dispatcher` `0x15a9c8`. It
+dispatches on the frame's **first byte** with a compare chain, not a `tbh`:
+
+| frame byte | target |
+|---|---|
+| `0x16` (22) | `sdk_mass_pb_handle` `0x12110e24` |
+| `1` | `0x157e98` |
+| `2` | `0x15c988` |
+| anything else | `0x15d728` → the callback installed at `0x6039cbb8`, `0x2b0d48` |
+
+So `22/0` **is** a positive chain: channel-2 frame → `sdk_mass_pb_handle`. The two `tbh`
+routers in the previous section cover only the PB (types 0–10) and preprocess (0–9) paths; the
+frame router is what handles the rest.
+
+Type 17 is not one of its explicit cases, so it takes the default path: `0x15d728` →
+`pb_recv_handler` `0x122b0d48`, which decodes (`0x12208068`) and forwards `(type, subtype)`
+through `0x191eca` → `0x1919c4` → `0x15c906`. That last call looks the value up in the
+registry at `0x60397cfc`: `0x15c8a8` inserts a node, `0x15d9f4(id, 1)` subscribes, and the
+only subscribers are `spp_connected_handler` (id `0`) and `spp_disconnected_handler`. So the
+registry is a **connection table** and the forward is an outgoing send, not a dispatch.
+
+The channel router `0x1215a9c8` above it sends channel 1 to the frame router, channel 2 to
+`mass_receiver` `0x121104d4` and drops 3–7. Sweeps from the frame router (1098
+functions), the callback chain (252) and the ch2/6/7 subtree (386) found no reference to
+`0x603b3d2c` or an alarm routine.
+
+`0x2006a9ec` is the alarm-list *screen*: `0x3b4c4` sets `[0x2006a9ec] = 1` as a
+refresh flag, `0x55594` clears it on teardown, and the row pointers are at
+`[[0x2006a9ec+4]+0x14]`. All 21 of `0x3b4c4`'s opcodes reach 1144 functions with no alarm
+link. Type 17 needs a phone↔watch capture.
+
+`2/18` does **not** reach the tone either: its case builds a response. The watch rings from
+`g_popups_alarm_remind_logic` `0x1221bea4` → `play_sound`, driven by the popup framework.

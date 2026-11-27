@@ -64,19 +64,20 @@ prologues.
 - `spp_ble_thread_init`, `protobuf_queue_init` and `protobuf_dispatch_thread` are referenced
   only by data words, so auto-analysis left them undefined; they were created from their
   verified prologues.
-- `app_preprocess_thread_entry` is the **second dispatch**: the `mi_pb` type-2 table covers
-  `0xc606`–`0xc62e`; this thread routes type 2 through `app_system_subtype_dispatch`
-  (`0xc603` time, `0xc604` force-upgrade, `0xc605` prepare). `0xc600 + subtype` is confirmed
+- `app_preprocess_thread_entry` is the **second dispatch** for type 2:
+  `app_system_subtype_dispatch` handles `0xc603`–`0xc605`; `0xc600 + subtype` is confirmed
   end-to-end ([ota.md](ota.md)).
 
 ## Scope
 
-This table is the published map, not the limit of what is named. Regenerate the importable
-forms with `scripts/export_symbols.py`.
+Regenerate the importable forms with `scripts/export_symbols.py`.
 
-The mass channel (2) cluster, decompiled for the resume question
-([mass-channel.md](mass-channel.md)): `mass_receiver` `0x121104d4` (channel-2 data, 45 s timer),
-`sdk_mass_pb_handle` `0x12110e24` (`22/0` handler), `mass_control_handle` `0x12110d20` (`22/1`
-pause/cancel), `mass_prepare` `0x1220a3f4` (resumes from the stored offset iff md5/size/type
-match), `mass_channel2_data` `0x1220a4bc` (`offset += len`), `mass_end_handler` `0x1220a2cc`
-(zeroes it on session end).
+The mass channel (2) cluster ([mass-channel.md](mass-channel.md)): `mass_receiver`
+`0x121104d4`, `sdk_mass_pb_handle` `0x12110e24` (`22/0`), `mass_control_handle` `0x12110d20`
+(`22/1`), `mass_prepare` `0x1220a3f4`, `mass_channel2_data` `0x1220a4bc`, `mass_end_handler`
+`0x1220a2cc`.
+
+Sound and alarms are named too: `alarmsvc_create` `0x1226407c`, `alarmsvc_thread_entry`
+`0x122640e8`, `alarm_scan` `0x1204f3c8`, `alarm_node_rtc_arm` `0x121900e4`, `rtc_control_lcpu`
+`0x12264ec8`, `rtc_set_alarm` `0x12264fb0`, `rtc_program_alarm` `0x12026404`; see
+[alarm-scheduler.md](alarm-scheduler.md) and [sound-alarms.md](sound-alarms.md).

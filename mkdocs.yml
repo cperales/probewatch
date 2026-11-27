@@ -56,6 +56,8 @@ nav:
       - ota.md
   - Firmware:
       - firmware.md
+      - sound-alarms.md
+      - alarm-scheduler.md
       - firmware-upstreams.md
       - lcpu.md
       - firmware-symbols.md

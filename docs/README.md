@@ -15,13 +15,15 @@ short contract. `make sizes` tracks their cost (~3.8 bytes/token).
 | [arq.md](arq.md) | 3 KB | L1 ACKs, windows and retransmission; app constants and measurements |
 | [commands.md](commands.md) | 4 KB | Command ids from the app: system, settings, watchfaces |
 | [commands-health.md](commands-health.md) | 4 KB | Command ids: notifications, health, alarms, contacts |
-| [commands-internal.md](commands-internal.md) | 5 KB | Command ids: bind, NFC, eSIM, media, apps, mass channel |
+| [commands-internal.md](commands-internal.md) | 8 KB | Command ids: bind, NFC, eSIM, media, apps, mass channel |
 | [commands-tested.md](commands-tested.md) | 7 KB | What each command returned on the watch: reads, writes, live stream |
 | [channels.md](channels.md) | 7 KB | Channels 2 and 5: capture method, trigger matrix, analysis, findings |
 | [apk-analysis.md](apk-analysis.md) | 4 KB | Official app: provenance, where the protocol lives, what it gave |
 | [ota.md](ota.md) | 8 KB | Official app's firmware update: version check, download, channel-6 protocol |
 | [mass-channel.md](mass-channel.md) | 8 KB | Channel 2 (`ota_type = 2`): `DataUpload` handshake, chunk framing, watch receiver, read-only open results |
 | [firmware.md](firmware.md) | 8 KB | The watch package: two images (HCPU/LCPU), unpacking, DFU, load map |
+| [sound-alarms.md](sound-alarms.md) | 7 KB | Sound: DAC volume, the 1 kHz tone routine, the alert popup dispatch |
+| [alarm-scheduler.md](alarm-scheduler.md) | 8 KB | The `alarmsvc` list scan, the RTC `SET_ALARM` path, the internal message router |
 | [firmware-symbols.md](firmware-symbols.md) | 8 KB | HCPU symbol map: method, confidence rules, DFU/OTA and RTC cluster |
 | [firmware-symbols-flash.md](firmware-symbols-flash.md) | 6 KB | HCPU FAL and FlashDB KV store symbols, recovered by call graph |
 | [firmware-symbols-kernel.md](firmware-symbols-kernel.md) | 8 KB | HCPU kernel group: IPC, timers, device framework, BSim cross-check |
