@@ -3,6 +3,7 @@ secrets/
 __pycache__/
 .venv/
 captures/
+site/
 
 # Generated / vendored -- bootstrap both with ./fetch_protos.sh
 proto/

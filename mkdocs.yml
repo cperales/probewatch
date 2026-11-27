@@ -1,0 +1,84 @@
+# MkDocs + Material config for the GitHub Pages docs site.
+# Build: `make docs` (strict) — serve locally: `make docs-serve`.
+# The site is docs/ as-is; docs/README.md is the home page (MkDocs treats it as index).
+
+site_name: ProbeWatch
+site_description: Unofficial Linux probes for the Redmi Watch 5 Active (M2351W1)
+site_url: https://cperales.github.io/probewatch/
+repo_url: https://github.com/cperales/probewatch
+repo_name: cperales/probewatch
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.highlight
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+# Every page must appear here: --strict fails on a page missing from nav, which mirrors
+# check_docs.py requiring every docs/*.md to be listed in docs/README.md.
+nav:
+  - Home: README.md
+  - Overview: overview.md
+  - Setup: setup.md
+  - Scripts: scripts.md
+  - The watch: device.md
+  - Protocol:
+      - protocol.md
+      - session.md
+      - arq.md
+      - channels.md
+      - mass-channel.md
+      - commands.md
+      - commands-health.md
+      - commands-internal.md
+      - commands-tested.md
+      - architecture.md
+  - Official app:
+      - apk-analysis.md
+      - ota.md
+  - Firmware:
+      - firmware.md
+      - firmware-upstreams.md
+      - lcpu.md
+      - firmware-symbols.md
+      - firmware-symbols-flash.md
+      - firmware-symbols-kernel.md
+      - firmware-symbols-drivers.md
+      - firmware-symbols-lcpu.md
+  - Audio: audio.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+hooks:
+  - scripts/mkdocs_hooks.py
+
+# check_docs.py already validates every relative link and anchor, so do not duplicate
+# that here; only keep MkDocs from failing on links it cannot resolve (e.g. repo-root files).
+validation:
+  links:
+    anchors: ignore
+    unrecognized_links: ignore
