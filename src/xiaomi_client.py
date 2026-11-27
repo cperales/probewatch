@@ -935,58 +935,113 @@ class XiaomiWatch:
         self.send_command(cmd)
         return self.wait_for(cmd.type, cmd.subtype, timeout)
 
+    def _reconnect(self, attempts: int = 3, delay: float = 2.0) -> None:
+        """Tear down and re-run connect/auth, clearing ARQ/session state.
+
+        A dropped mass session leaves stale sequence numbers and a closed socket; the watch
+        re-arms from a ``DataUploadRequest`` after auth, so the state must start clean.
+        """
+        self.close()
+        self.link = None
+        self.tx_base = 0
+        self.tx_next = 0
+        self.rx_expect = 0
+        self.rx_pending = 0
+        self.ack_deadline = None
+        self._sent.clear()
+        self._sent_times.clear()
+        self.inbox.clear()
+        self.session_ok = False
+        self.peer_window = None
+        for attempt in range(attempts):
+            try:
+                self.connect()
+                return
+            except OSError as e:
+                if attempt == attempts - 1:
+                    raise
+                print(f"[mass] reconnect failed ({e}); retrying ...")
+                time.sleep(delay)
+
     def mass_push(
         self,
         data: bytes,
         chunk_size: int | None = None,
         fw_version: str = "",
         upload_type: int = MASS_UPLOAD_FIRMWARE,
+        max_reconnects: int = 8,
+        reconnect_delay: float = 1.0,
     ) -> xiaomi_pb2.Command | None:
         """Push a file over the mass channel (2), the ``ota_type = 2`` path.
 
-        For firmware this sends the battery-gated prepare (``2/5``), then arms the receiver
-        with a ``DataUploadRequest`` (``22/0``), then streams the raw bytes as plaintext
-        ``OP_WRITE`` chunks of the advertised ``chunkSize`` (4096). Returns the
-        ``DataUploadAck`` command, or ``None`` if the receiver never answered.
+        Mirrors the official app: send the battery-gated prepare (``2/5``) once, then per
+        session arm the receiver with a ``DataUploadRequest`` (``22/0``) and stream the raw
+        bytes as plaintext ``OP_WRITE`` segments of the advertised ``chunkSize``. The watch
+        drops the SPP session at ~20 s, so a dropped session reconnects and resumes from
+        ``DataUploadAck.resumePosition``. Returns the last ``DataUploadAck`` command.
         """
         md5 = hashlib.md5(data).digest()
-        md5_hex = md5.hex()
-        print(f"[mass] {len(data)} B, md5 {md5_hex}")
+        print(f"[mass] {len(data)} B, md5 {md5.hex()}")
 
         if upload_type == MASS_UPLOAD_FIRMWARE:
-            self.send_command(mass_prepare_command(fw_version, md5_hex))
+            self.send_command(mass_prepare_command(fw_version, md5.hex()))
             r = self.wait_for(2, 5)
             if r is not None and r.system.HasField("firmwareInstallResponse"):
                 print(f"[mass] prepare status {r.system.firmwareInstallResponse.status}")
 
-        self.send_command(mass_upload_command(md5, len(data), upload_type))
-        ack = self.wait_for(22, 0)
-        chunk = chunk_size or MASS_DEFAULT_CHUNK
-        if ack is not None and ack.dataUpload.HasField("dataUploadAck"):
-            a = ack.dataUpload.dataUploadAck
-            print(f"[mass] ack errno {a.errno} chunkSize {a.chunkSize} resume {a.resumePosition}")
-            if a.errno != 0:
-                print(f"[mass] receiver not ready (errno {a.errno}), aborting")
-                return ack
-            if chunk_size is None and a.chunkSize:
-                chunk = a.chunkSize
-        elif ack is None:
-            print("[mass] no DataUploadAck; pushing with the default chunk size")
-
-        saved = self.l2_channel
-        self.l2_channel = CH_DATA
-        try:
-            for off in range(0, len(data), chunk):
-                piece = data[off : off + chunk]
-                if self._send_until_space(OP_WRITE, piece) is None:
-                    print("[mass] send window stalled, aborting")
+        offset = 0
+        reconnects = 0
+        ack = None
+        while True:
+            # Arm the receiver for this session and learn where to resume from.
+            self.send_command(mass_upload_command(md5, len(data), upload_type))
+            ack = self.wait_for(22, 0)
+            chunk = chunk_size or MASS_DEFAULT_CHUNK
+            resume = 0
+            if ack is not None and ack.dataUpload.HasField("dataUploadAck"):
+                a = ack.dataUpload.dataUploadAck
+                print(
+                    f"[mass] ack errno {a.errno} chunkSize {a.chunkSize} resume {a.resumePosition}"
+                )
+                if a.errno != 0:
+                    print(f"[mass] receiver not ready (errno {a.errno}), aborting")
                     return ack
-                if off % (chunk * 32) == 0:
-                    print(f"[mass] {off}/{len(data)} B")
-        finally:
-            self.l2_channel = saved
-        print(f"[mass] pushed {len(data)} B")
-        return ack
+                if chunk_size is None and a.chunkSize:
+                    chunk = a.chunkSize
+                resume = a.resumePosition
+            elif ack is None:
+                print("[mass] no DataUploadAck; pushing with the default chunk size")
+            if resume != offset:
+                print(f"[mass] resuming at {resume} B (local offset {offset})")
+                offset = resume
+
+            saved = self.l2_channel
+            self.l2_channel = CH_DATA
+            try:
+                while offset < len(data):
+                    piece = data[offset : offset + chunk]
+                    if self._send_until_space(OP_WRITE, piece, timeout=40.0) is None:
+                        print(f"[mass] window stalled at {offset} B; reconnecting")
+                        break
+                    offset += len(piece)
+                    if offset % (chunk * 32) < chunk:
+                        print(f"[mass] {offset}/{len(data)} B")
+            except (OSError, ConnectionError) as e:
+                print(f"[mass] session dropped at {offset} B: {e}")
+            finally:
+                self.l2_channel = saved
+
+            if offset >= len(data):
+                print(f"[mass] pushed {offset}/{len(data)} B")
+                return ack
+
+            reconnects += 1
+            if reconnects > max_reconnects:
+                print(f"[mass] giving up after {max_reconnects} reconnects")
+                return ack
+            print(f"[mass] reconnecting ({reconnects}/{max_reconnects}) ...")
+            time.sleep(reconnect_delay)
+            self._reconnect()
 
     def listen(self, seconds: float, keepalive: float = 0) -> None:
         """Listen for unsolicited frames for *seconds* seconds, printing each.
