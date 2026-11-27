@@ -121,10 +121,19 @@ The watch-side handler (`app_lv_task_ota_process`, reached via the DFU/OTA app s
 and internal message `0x8108`) reads the battery level and, below 30 %, rejects with
 `Low_power_ota_failed` without arming; at or above it shows the DFU confirm popup, arms a
 10 s timer and answers OK. No comparison of `firmwareInstallRequest.version` against the
-installed firmware was found at prepare time. `2/5` also sits outside the main protobuf
-dispatch (its type-2 table runs subtypes 6–46; subtype 5 = `0xc605` is absent), which is why
-an empty `2/5` is ACKed-and-ignored. The `md5` is only checked at the **end** of the channel-2
-push ([mass-channel.md](mass-channel.md)), not at prepare.
+installed firmware was found at prepare time. The `md5` is only checked at the **end** of the
+channel-2 push ([mass-channel.md](mass-channel.md)), not at prepare.
+
+`2/5` sits outside the main protobuf dispatch (`protobuf_dispatch_thread` `0x12258624`, whose
+type-2 table runs `0xc606`–`0xc62e`). A **second dispatch** routes it:
+`app_preprocess_thread_entry` (`0x12094890`) → `app_system_subtype_dispatch` (`0x1205afe8`, `tbb`
+over `0xc603`–`0xc608`) → `ble_service_cb` (`0x12194e40`) → `ota_prepare_response` (`0x1200c0ac`),
+which `strlen`+`memcpy`s the payload and sends it over SPP — `version` (and `md5`) is never
+compared. The installed version is read only by `dfu_get_version` (`0x120ff250`), called only
+from the DFU control handler (`0x120fe86c`), never from prepare, so the two never meet. The only
+version compares in the image are the hyn92xx/chsc6x touch-controller checks. The `0xc600 +
+subtype` encoding is confirmed end-to-end (app sends raw `subtype = 5`); symbols on
+[firmware-symbols-lcpu.md](firmware-symbols-lcpu.md).
 
 ## What this means for ProbeWatch
 
