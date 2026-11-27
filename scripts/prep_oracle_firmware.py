@@ -10,7 +10,12 @@ integrity is broken, to show which later check (if any) rejects a modified image
 ``oracle-image.bin``
     one byte flipped inside image0 (the HCPU app). Invalidates any per-image
     hash/signature; if nothing checks it, the watch would install a corrupted
-    image (the risky variant).
+    HCPU image.
+
+``oracle-image1.bin``
+    one byte flipped inside image1 (the compressed LCPU stream). Same oracle, but a
+    corrupted LCPU (Bluetooth) leaves the HCPU/GUI bootable, so it is the gentler
+    recovery path if the image is accepted.
 
 ``oracle-header.bin``
     one byte flipped in sub-file 0's trailing 4-byte hash. The images are
@@ -48,6 +53,7 @@ OFF_IMAGE0_SIZE = 0x0C
 OFF_SUBFILE_TABLE = 8
 HEADER_HASH_OFF = OFF_SUBFILE_TABLE + 12  # sub-file 0's trailing 4-byte hash
 IMAGE_FLIP_OFF = HEADER_SIZE + 0x1000  # well inside image0, past the vector table
+IMAGE1_FLIP = 0x1000  # offset into image1 (added to HEADER_SIZE + image0_size)
 
 
 def find_package(arg: str | None) -> Path:
@@ -98,6 +104,15 @@ def main() -> int:
         f"\nimage variant (risky): 0x{old:02x}->0x{new:02x} at 0x{IMAGE_FLIP_OFF:x} (inside image0)"
     )
     report(out / "oracle-image.bin", image)
+
+    image1_off = HEADER_SIZE + image0_size + IMAGE1_FLIP
+    image1, old, new = flip(data, image1_off)
+    (out / "oracle-image1.bin").write_bytes(image1)
+    print(
+        f"\nimage1 variant (gentler): 0x{old:02x}->0x{new:02x} at 0x{image1_off:x}"
+        " (inside image1/LCPU)"
+    )
+    report(out / "oracle-image1.bin", image1)
 
     header, old, new = flip(data, HEADER_HASH_OFF)
     (out / "oracle-header.bin").write_bytes(header)
