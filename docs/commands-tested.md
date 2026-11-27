@@ -31,6 +31,7 @@ knows can still answer `status: 1`.
 | `8/30` | no answer | |
 | `8/35` vitality score | `vitalityScore { sevenDay: false dailyProgress: false }` | [hw 2.2.111 2026-11-24] |
 | `8/42` goals get | `currentGoals: 1,2,3`, `supportedGoals: 1,2,3,4` | [hw 2.2.111 2026-11-24] |
+| `17/0` alarms get | `schedule { alarms: 3 (ids 0,1,2; `alarmDetails { time hour minute } repeatMode enabled smart`), maxAlarms: 10 }` | [hw 2.2.111 2026-11-27] |
 
 Recheck on 2.2.111 [hw 2.2.111 2026-11-24], reads only: `2/1`, `2/2`, `2/14` (settings 1 and
 2), `2/24`, `2/51`, `4/0`, `8/2` and `8/29` answer as on 2.2.110, and `2/34` and `2/78` still

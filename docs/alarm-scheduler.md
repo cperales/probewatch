@@ -149,10 +149,10 @@ association with `2/18` is withdrawn. `[fw 2.2.111]`
 
 ## Which commands reach this
 
-No protobuf command was found that reaches it. The frame router `0x15a73c` handles `0x16`
-(mass), `1` and `2` explicitly; everything else goes to `pb_recv_handler` `0x122b0d48` →
-`0x191eca` → `0x15c906`. A 1736-function sweep found no reference to `0x603b3d2c` or any alarm
-routine, so type 17 needs a phone↔watch capture.
+`17/0` (alarms get) returns the stored schedule on hardware
+([commands-tested.md](commands-tested.md)), so alarm commands **are** dispatched; the static
+`Command.type` switch for types 11–25 was just not located. The schedule lives in the
+`alarm_clock_user` flash region `0x134e0000` (read by `0x122af590`).
 
 The only verified command is the shell `__cmd_alarm_dump` (`0x49bc8c`): handler `0x12263ea0`
 walks the list and calls `alarm_node_rtc_arm` per node. The popup `0x1221bea4` rings via

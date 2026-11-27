@@ -205,22 +205,13 @@ So `22/0` **is** a positive chain: channel-2 frame → `sdk_mass_pb_handle`. The
 routers in the previous section cover only the PB (types 0–10) and preprocess (0–9) paths; the
 frame router is what handles the rest.
 
-Type 17 is not one of its explicit cases, so it takes the default path: `0x15d728` →
-`pb_recv_handler` `0x122b0d48`, which decodes (`0x12208068`) and forwards `(type, subtype)`
-through `0x191eca` → `0x1919c4` → `0x15c906`. That last call looks the value up in the
-registry at `0x60397cfc`: `0x15c8a8` inserts a node, `0x15d9f4(id, 1)` subscribes, and the
-only subscribers are `spp_connected_handler` (id `0`) and `spp_disconnected_handler`. So the
-registry is a **connection table** and the forward is an outgoing send, not a dispatch.
-
-The channel router `0x1215a9c8` above it sends channel 1 to the frame router, channel 2 to
-`mass_receiver` `0x121104d4` and drops 3–7. Sweeps from the frame router (1098
-functions), the callback chain (252) and the ch2/6/7 subtree (386) found no reference to
-`0x603b3d2c` or an alarm routine.
-
-`0x2006a9ec` is the alarm-list *screen*: `0x3b4c4` sets `[0x2006a9ec] = 1` as a
-refresh flag, `0x55594` clears it on teardown, and the row pointers are at
-`[[0x2006a9ec+4]+0x14]`. All 21 of `0x3b4c4`'s opcodes reach 1144 functions with no alarm
-link. Type 17 needs a phone↔watch capture.
+Type 17 **is** handled: `17/0` returns the stored `schedule { alarms … maxAlarms: 10 }`
+[hw 2.2.111 2026-11-27] ([commands-tested.md](commands-tested.md)). The earlier reading that
+no type-17 command reaches a handler was wrong: the two `tbh` routers (`0x12258624`,
+`0x12094890`) and the frame router (`0x15a73c`) are only part of the path, and a further
+`Command.type` dispatch exists that was not located statically. The schedule itself is
+persisted in the `alarm_clock_user` flash region at `0x134e0000` (80 KB, `0xbcbcbcbc` magic),
+read by `0x122af590`.
 
 `2/18` does **not** reach the tone either: its case builds a response. The watch rings from
 `g_popups_alarm_remind_logic` `0x1221bea4` → `play_sound`, driven by the popup framework.
