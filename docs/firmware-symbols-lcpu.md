@@ -15,8 +15,8 @@ image are stored shifted: **true = stored - 0x26000** (PC-relative code is alrea
 so the image is imported pre-patched by `scripts/prepatch_lcpu.py`.
 
 Imported from the pre-patched image at base `0x12000000` under `ARM:LE:32:Cortex`, 4 GB heap,
-block `0x12000000`–`0x12551fff`, 16,901 functions at import. Bodies below are the Cortex
-bounds; three rows are **call sites**, not function entries (`entry` empty).
+block `0x12000000`–`0x12551fff`, 16,901 functions at import. Bodies are Cortex bounds; three
+rows are **call sites** (`entry` empty).
 
 ## Caveat
 
@@ -24,8 +24,8 @@ The "Non-Returning Functions - Discovered" pass is disabled before analysis. The
 carries no ROM, so thunks to `0x2006xxxx` are unresolvable and the pass marked them
 non-returning; callers then stopped at the call — `hkdf_sha256_expand` ended at `0x121cf8b9`
 instead of its real `bx lr` at `0x121cf910`. Functions reached only through a data word
-(thread entries) are not created by auto-analysis; they were created from their verified
-prologues.
+(`spp_ble_thread_init`, `protobuf_queue_init`, `protobuf_dispatch_thread`) are created from
+their verified prologues.
 
 ## Symbols
 
@@ -53,6 +53,7 @@ prologues.
 | `app_lv_task_ota_process` | `0x120808c4` | `0x120808c4`–`0x12080997` | high | logs `app_lv_task_ota_process: type %d, subtype %d` (`__func__` `0x12416429`); on `{type=5, subtype=0x8108}` reads battery (`FUN_120d0578`), **gates `< 0x1e` (30 %)** → `Low_power_ota_failed`, else `APP_POPUP_DFU battery level` + 10 s timer (`[inst+0x2c]=10000`) |
 | `dfu_lite_install_state` | `0x120fec9c` | `0x120fec9c`–`0x120feea7` | high | DFU install state handler; on event 0/1 sends `{type=5, subtype=0x8108}` (the message that arms `app_lv_task_ota_process`); logs `… last ota failed, ignore event`, `DFU APP RESUME RESPONSE`, `install start` |
 | `dfu_get_version` | `0x120ff250` | `0x120ff250`–`0x120ff281` | high | reads the installed `ota ver`; logs `dfu_get_version addr: 0x%x`; called only from `FUN_120fe86c` (DFU control), never from the `2/5` prepare path |
+| `app_setting_dlvp_set_jlink_uart_switch` | `0x120fc090` | `0x120fc090`–`0x120fc0dc` | high | PA18/PA19 pinmux `0x5000307c` := `0x2d2`/`0x2d2` (JTAG/SWD) or `0x2f4`/`0x2b4` (UART); persists via `0x12234820`; only static ref: MSH command `cmd_dbguart2jlink` (`0x1249b5a8`), no DLVP call site |
 
 ### Notes
 
@@ -61,12 +62,8 @@ prologues.
   exported as functions.
 - `channel_msh_command`: the earlier entry `0x12049a80` was 8 bytes into the prologue; the
   function starts at `0x12049a78` (`push {r4-r8,lr}`).
-- `spp_ble_thread_init`, `protobuf_queue_init` and `protobuf_dispatch_thread` are referenced
-  only by data words, so auto-analysis left them undefined; they were created from their
-  verified prologues.
-- `app_preprocess_thread_entry` is the **second dispatch** for type 2:
-  `app_system_subtype_dispatch` handles `0xc603`–`0xc605`; `0xc600 + subtype` is confirmed
-  end-to-end ([ota.md](ota.md)).
+- `app_preprocess_thread_entry` is the **second dispatch** for type 2 (`0xc600 + subtype`,
+  confirmed end-to-end in [ota.md](ota.md)).
 
 ## Scope
 

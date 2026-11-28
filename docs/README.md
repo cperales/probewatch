@@ -8,7 +8,7 @@ short contract. `make sizes` tracks their cost (~3.8 bytes/token).
 | [overview.md](overview.md) | 3 KB | Project overview, capabilities, script map |
 | [setup.md](setup.md) | 4 KB | Bootstrap, dependencies, environment, troubleshooting |
 | [scripts.md](scripts.md) | 8 KB | Every script: purpose, arguments, usage examples |
-| [device.md](device.md) | 4 KB | The watch: identity, firmware history, Bluetooth identity, SDP services |
+| [device.md](device.md) | 5 KB | The watch: identity, firmware history, Bluetooth identity, SDP services |
 | [architecture.md](architecture.md) | 6 KB | `src/xiaomi_client.py`: layers, functions, protobuf bindings |
 | [protocol.md](protocol.md) | 5 KB | Wire format: L1 frame, session start, the channel/opcode table, v1 probe |
 | [session.md](session.md) | 5 KB | Handshake, auth, HKDF keys, AES-CTR/CCM, session lifetime |

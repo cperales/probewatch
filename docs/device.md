@@ -66,6 +66,22 @@ Source: [hw 2.2.110 2026-11-20].
 | Xiaomi Inc. (GATT over BR/EDR) | `0xFDAB` | ATT, handles `0x0028`–`0x0030` | Xiaomi service |
 | Unknown (GATT over BR/EDR) | `0x3802` | ATT, handles `0x0031`–`0x0034` | vendor service |
 
+## Debug surface
+
+Static analysis of the LCPU confirms a SiFli **DLVP** settings handler,
+`app_setting_dlvp_set_jlink_uart_switch` (`0x120fc090`): it writes the PA18/PA19 pinmux at
+`0x5000307c` to `0x2d2`/`0x2d2` (JTAG/SWD) or `0x2f4`/`0x2b4` (debug UART) and persists the
+choice via `0x12234820`; the function itself performs no auth check [fw 2.2.111]. Its only
+static reference is the MSH shell command `cmd_dbguart2jlink` (`0x1249b5a8`, "Switch debug
+uart to jlink"), which parses `argv[1]` with `atoi`; no DLVP/GATT descriptor table, literal
+or branch targets it. The candidate dispatch at `0x120fbdb0` calls through a RAM callback
+(`0x60398d9c`) with RAM state (`0x603c0700`/`0x603c0708`), so any BLE binding is built at
+runtime [fw 2.2.111]. Byterialab reports it reachable over BLE GATT handles `0xA407`–`0xA40E`
+(runtime-built UUIDs) with no auth in the dispatch chain [ext Byterialab]; the static image
+cannot confirm that route or its auth, so the read-only probe `src/dlvp_probe.py` is the
+test. Results go in [commands-tested.md](commands-tested.md); the symbol is in
+[firmware-symbols-lcpu.md](firmware-symbols-lcpu.md#symbols).
+
 ## Battery and state readings
 
 | Reading | Source |
