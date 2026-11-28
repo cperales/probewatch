@@ -165,6 +165,12 @@ async def main(mac: str, scan_timeout: float, cycle: bool) -> None:
     async with BleakClient(device, timeout=30) as client:
         print(f"Connected: {client.is_connected}   MTU: {client.mtu_size}\n")
         entries = await enumerate_gatt(client)
+        if not entries:
+            print(
+                "\nNo GATT services discovered. For this dual-mode watch BlueZ may have\n"
+                "connected over the classic bearer; force LE with\n"
+                "`gatttool -t le --primary` / `gatttool -t le --characteristics`."
+            )
         await read_dlvp_values(client, entries)
         report(entries)
         if cycle:

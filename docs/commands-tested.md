@@ -104,6 +104,21 @@ The receiver answers only after a *complete* `DataUploadRequest` (type + `md5sum
 then replies `errno: 0` with `chunkSize: 4096`; the `2/5` reply codes stay unverified because
 reading them needs a real `version`/`md5`.
 
+## DLVP GATT probe
+
+Read-only probe for the DLVP service Byterialab reports at `0xA407`–`0xA40E`
+([device.md](device.md#debug-surface)); firmware 2.2.111, no write (no matching
+characteristic).
+
+| Probe | Result | Source |
+|---|---|---|
+| LE GATT (`gatttool -t le`) | 7 svcs / 18 ch, max `0x0033`; no `0xA407`–`0xA40E` | [hw 2.2.111 2026-11-28] |
+| BR/EDR ATT (PSM `0x1f`) | same table, max `0x0034`; no `0xA407`–`0xA40E` | [hw 2.2.111 2026-11-28] |
+| Vendor `0xaa01` read | refused (ATT `0x0a`); Device Name reads | [hw 2.2.111 2026-11-28] |
+
+Bleak (`src/dlvp_probe.py`) could not hold LE discovery (0 services / "device disconnected");
+`gatttool` and a raw ATT socket enumerated instead.
+
 ## Next probes
 
 ```bash

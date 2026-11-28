@@ -78,8 +78,11 @@ or branch targets it. The candidate dispatch at `0x120fbdb0` calls through a RAM
 (`0x60398d9c`) with RAM state (`0x603c0700`/`0x603c0708`), so any BLE binding is built at
 runtime [fw 2.2.111]. Byterialab reports it reachable over BLE GATT handles `0xA407`–`0xA40E`
 (runtime-built UUIDs) with no auth in the dispatch chain [ext Byterialab]; the static image
-cannot confirm that route or its auth, so the read-only probe `src/dlvp_probe.py` is the
-test. Results go in [commands-tested.md](commands-tested.md); the symbol is in
+cannot confirm that route or its auth. A read-only probe on 2.2.111 (2026-11-28) found no
+service at `0xA407`–`0xA40E` on either bearer (LE: 7 services, max handle `0x0033`; BR/EDR
+ATT: the same table, max `0x0034`), so the BLE route is not advertised on this firmware; the
+confirmed path to the pinmux handler is the UART MSH command `cmd_dbguart2jlink`. Results are
+in [commands-tested.md](commands-tested.md); the symbol is in
 [firmware-symbols-lcpu.md](firmware-symbols-lcpu.md#symbols).
 
 ## Battery and state readings

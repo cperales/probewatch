@@ -16,7 +16,7 @@ short contract. `make sizes` tracks their cost (~3.8 bytes/token).
 | [commands.md](commands.md) | 4 KB | Command ids from the app: system, settings, watchfaces |
 | [commands-health.md](commands-health.md) | 4 KB | Command ids: notifications, health, alarms, contacts |
 | [commands-internal.md](commands-internal.md) | 7 KB | Command ids: bind, NFC, eSIM, media, apps, mass channel |
-| [commands-tested.md](commands-tested.md) | 7 KB | What each command returned on the watch: reads, writes, live stream |
+| [commands-tested.md](commands-tested.md) | 8 KB | What each command returned on the watch: reads, writes, live stream |
 | [channels.md](channels.md) | 7 KB | Channels 2 and 5: capture method, trigger matrix, analysis, findings |
 | [apk-analysis.md](apk-analysis.md) | 4 KB | Official app: provenance, where the protocol lives, what it gave |
 | [ota.md](ota.md) | 8 KB | Official app's firmware update: version check, download, channel-6 protocol |
