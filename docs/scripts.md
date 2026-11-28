@@ -12,12 +12,9 @@ argument, then `$WATCH_MAC`, then the `MAC:` line in the git-ignored `secrets/de
 
 ### `src/find_watch.py`
 
-Active BLE scan that flags Xiaomi-looking advertisements. Detects the watch even with
-random/private addresses by checking:
-
-- Service UUID fragments: `fe95`, `fee0`, `fee1` (Xiaomi/Huami)
-- Company ID: `0x038F` (Xiaomi), `0x0157` (Anhui Huami), `0x0B48` (Xiaomi alt)
-- Name hints: `redmi`, `xiaomi`, `watch`, `mi `
+Active BLE scan that flags Xiaomi-looking advertisements by service UUID fragment (`fe95`,
+`fee0`, `fee1`), company ID (`0x038F`, `0x0157`, `0x0B48`) or name (`redmi`, `xiaomi`,
+`watch`, `mi `), even behind a random/private address.
 
 ```bash
 uv run python src/find_watch.py [--timeout N]
@@ -53,13 +50,8 @@ key and invalidates `secrets/auth_key.txt`. Use `--direct` to pair without reset
 
 ### `src/watch_info.py`
 
-Connect to the watch over BLE and read everything readable:
-
-- All GATT services and characteristics (UUID, description, properties)
-- Readable characteristic values (decoded as UTF-8 strings or hex)
-- Standard SIG characteristic mapping (Device Name, Model Number, Serial Number, etc.)
-- Heart-rate subscription (10 s) if the HRM characteristic is present
-- Summary table at the end
+Connect to the watch over BLE and read every readable GATT service/characteristic (decoded
+values, SIG name mapping, and a 10 s heart-rate subscription when present), with a summary.
 
 ```bash
 uv run python src/watch_info.py [MAC] [--scan-timeout N]
@@ -119,10 +111,9 @@ side effect — it makes the watch ring — so it stays last in the list.
 ### `src/decode_capture.py`
 
 Offline analysis of a `--capture` file. Prints per-channel frame counts, distinct lengths,
-opcodes and interval medians; for channels other than 1 it also reports sample payloads,
-which generated protobuf message accounts for a payload (strict round-trip, so unknown-field
-noise does not count as a match), and whether the payloads form a u16 length-prefixed record
-stream.
+opcodes and interval medians; for channels other than 1 it also reports sample payloads, the
+protobuf message that accounts for each (strict round-trip, ignoring unknown-field noise), and
+whether the payloads form a u16 length-prefixed record stream.
 
 ```bash
 uv run python src/decode_capture.py captures/<file>.ndjson [--channel N] [--samples N]
@@ -154,6 +145,18 @@ See [audio.md](audio.md) for SCO transport quirks and verification methods.
 
 ## Probing scripts
 
+### `src/dlvp_probe.py`
+
+Lists the BLE GATT handle map and dumps the SiFli DLVP range (`0xA407`–`0xA40E`), which
+static analysis reports carries the `jlink_uart_switch` debug-port setting. Read-only by
+default; `--cycle` writes both modes and restores the original value.
+
+```bash
+uv run python src/dlvp_probe.py [MAC] [--scan-timeout N] [--cycle]
+```
+
+Requires: phone Bluetooth off, watch advertising.
+
 ### `src/spp_probe.py`
 
 Passive RFCOMM byte logger on channel 2. Connects to the SPP channel and prints every byte
@@ -174,7 +177,7 @@ then decodes and displays endpoints and codec capabilities (SBC, AAC, vendor-spe
 uv run python src/a2dp_probe.py [MAC]
 ```
 
-Requires: Python with `AF_BLUETOOTH` (system interpreter).
+Requires: the same system interpreter (`AF_BLUETOOTH`).
 
 ## Firmware tooling
 
@@ -183,15 +186,15 @@ Offline tools under `scripts/`. They never touch the watch.
 ### `scripts/fetch_firmware_url.py`
 
 Reproduces the app's `latest_ver` request (`POST hlth.io.mi.com/healthapp/device/latest_ver`)
-and prints the JSON reply; `--download` saves the image and checks the server MD5.
+and prints the JSON reply; `--download` saves and MD5-checks the image.
 
 ```bash
 uv run python scripts/fetch_firmware_url.py --fw-ver 2.2.110 [--download [PATH]]
 ```
 
-Needs the `miothealth` account cookie (`cUserId`/`serviceToken`) in
-`secrets/miot_health_cookie.txt`, `--cookie`, or `$MIOT_HEALTH_COOKIE`; without it the server
-answers 401. `--print-curl` shows the equivalent request. See [ota.md](ota.md).
+Needs the `miothealth` cookie (`cUserId`/`serviceToken`) in `secrets/miot_health_cookie.txt`,
+`--cookie`, or `$MIOT_HEALTH_COOKIE` (else 401). `--print-curl` prints the request. See
+[ota.md](ota.md).
 
 ### `scripts/extract_firmware.py`
 
